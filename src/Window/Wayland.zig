@@ -15,6 +15,9 @@ surface: *wl.Surface,
 xdg_surface: *xdg.Surface,
 toplevel: *xdg.Toplevel,
 
+pointer: ?*wl.Pointer = null,
+keyboard: ?*wl.Keyboard = null,
+
 pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void {
     try Loader.load();
 
@@ -25,11 +28,16 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
 
     var registry_data: RegistryData = .{};
     registry.setListener(*RegistryData, RegistryData.listener, &registry_data);
-
-    if (display.roundtrip() != .SUCCESS) return error.DisplayRoundtrip;
+    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     const compositor = registry_data.compositor.?;
     const xdg_wm_base = registry_data.xdg_wm_base.?;
+    const seat = registry_data.seat.?;
+
+    seat.setListener(*Wayland, seatListener, self);
+
+    if (display.flush() != .SUCCESS) return error.Flush;
+    if (display.dispatch() != .SUCCESS) return error.Dispatch;
 
     const surface = try compositor.createSurface();
     const xdg_surface = try xdg_wm_base.getXdgSurface(surface);
@@ -59,6 +67,9 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
 
 pub fn close(self: *Wayland, window: *Window) void {
     _ = window;
+    if (self.pointer) |pointer| pointer.destroy();
+    if (self.keyboard) |keyboard| keyboard.destroy();
+
     self.toplevel.destroy();
     self.xdg_surface.destroy();
     self.surface.destroy();
@@ -69,19 +80,19 @@ pub fn close(self: *Wayland, window: *Window) void {
 }
 
 pub fn poll(self: *Wayland, window: *Window) !void {
-    _ = window;
     const display = self.display;
 
+    if (window.should_close) return;
+
     if (display.dispatchPending() != .SUCCESS) return error.DisplayDispatchPending;
+
     if (display.prepareRead()) {
         if (display.flush() != .SUCCESS) return error.DisplayFlush;
-
         var pfd: std.posix.pollfd = .{
             .fd = @intCast(display.getFd()),
             .events = std.posix.POLL.IN,
             .revents = 0,
         };
-
         if (std.posix.poll(@ptrCast(&pfd), 1) catch 0 > 0)
             if (display.readEvents() != .SUCCESS) return error.DisplayReadEvents else display.cancelRead();
 
@@ -130,12 +141,10 @@ fn xdgSurfaceListener(xdg_surface: *xdg.Surface, event: xdg.Surface.Event, confi
 fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, window: *Window) void {
     switch (event) {
         .configure => |configure| {
-            window.size = .{ .width = @intCast(configure.width), .height = @intCast(configure.height) };
-
             for (configure.states.slice(xdg.Toplevel.State)) |state| switch (state) {
                 .maximized => {},
                 .fullscreen => {},
-                .resizing => {},
+                .resizing => window.size = .{ .width = @intCast(configure.width), .height = @intCast(configure.height) },
                 .activated => window.focused = true,
                 .tiled_left => {},
                 .tiled_right => {},
@@ -146,6 +155,38 @@ fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, window: *Win
         },
         .close => window.should_close = true,
     }
+}
+
+fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, self: *Wayland) void {
+    switch (event) {
+        .capabilities => |capabilities| {
+            if (capabilities.capabilities.pointer) {
+                self.pointer = seat.getPointer() catch unreachable;
+                self.pointer.?.setListener(*Wayland, pointerListener, self);
+            } else if (self.pointer) |pointer| {
+                pointer.release();
+                self.pointer = null;
+            }
+            if (capabilities.capabilities.keyboard) {
+                self.keyboard = seat.getKeyboard() catch unreachable;
+                self.keyboard.?.setListener(*Wayland, keyboardListener, self);
+            } else if (self.keyboard) |keyboard| {
+                keyboard.release();
+                self.keyboard = null;
+            }
+        },
+        .name => {},
+    }
+}
+
+fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland) void {
+    _ = event;
+    _ = self;
+}
+
+fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, self: *Wayland) void {
+    _ = event;
+    _ = self;
 }
 
 var loader: Loader = .{};

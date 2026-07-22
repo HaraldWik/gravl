@@ -18,11 +18,12 @@ pub fn open(self: *Win32, window: *Window, options: Window.OpenOptions, gpa: std
 
     const class = std.mem.zeroInit(win32.WNDCLASSEXW, .{
         .cbSize = @sizeOf(win32.WNDCLASSEXW),
-        .lpszClassName = win32.L("WindowClass"),
+        .lpszClassName = std.unicode.utf8ToUtf16LeStringLiteral(if (options.app_id) |id| @tagName(id) else "Class"),
         .lpfnWndProc = wndProc,
         .hInstance = hinstance,
         .hCursor = win32.LoadCursorW(null, win32.IDC_ARROW),
     });
+    errdefer _ = win32.UnregisterClassW(class.lpszClassName, @ptrCast(hinstance));
     check(win32.RegisterClassExW(@ptrCast(&class))) catch return error.RegisterClass;
     const title = try std.unicode.utf8ToUtf16LeAllocZ(gpa, options.title);
     defer gpa.free(title);
@@ -44,6 +45,7 @@ pub fn open(self: *Win32, window: *Window, options: Window.OpenOptions, gpa: std
         reportErr();
         return error.CreateWindowFailed;
     };
+    errdefer _ = win32.DestroyWindow(hwnd);
 
     _ = win32.ShowWindow(hwnd, .{ .SHOWNORMAL = 1 });
     check(win32.UpdateWindow(hwnd)) catch return error.UpdateWindow;
@@ -82,7 +84,7 @@ pub fn poll(self: *Win32, window: *Window) !void {
                 .y = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue))),
             },
             win32.WM_USER + win32.WM_SETFOCUS => {
-                // capture cursor_mode
+                // capture mouse
                 window.focused = true;
             },
             win32.WM_USER + win32.WM_KILLFOCUS => window.focused = false,

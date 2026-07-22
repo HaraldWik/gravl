@@ -134,10 +134,7 @@ const vulkan = struct {
         return new_memory;
     }
 
-    fn free(
-        userdata: ?*anyopaque,
-        memory: ?*anyopaque,
-    ) callconv(.c) void {
+    fn free(userdata: ?*anyopaque, memory: ?*anyopaque) callconv(.c) void {
         if (memory == null) return;
 
         const self: *RendererAllocator = @ptrCast(@alignCast(userdata));

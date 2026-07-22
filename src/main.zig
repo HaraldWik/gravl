@@ -7,7 +7,7 @@ const Renderer = @import("Renderer.zig");
 const real_engine = @import("real_engine");
 
 pub fn main(init: std.process.Init) !void {
-    const gpa = init.gpa;
+    const gpa = init.arena.allocator();
 
     var args = try init.minimal.args.iterateAllocator(init.arena.allocator());
     _ = args.skip();
@@ -36,7 +36,14 @@ pub fn main(init: std.process.Init) !void {
     var renderer: Renderer = try .init(gpa, &window);
     defer renderer.deinit();
 
+    var frame: usize = 0;
+
     while (!window.should_close) {
         try window.poll();
+        try renderer.render(window.size);
+        try renderer.resize(window.size);
+
+        std.log.info("({d}) {d}x{d}", .{ frame, window.size.width, window.size.height });
+        frame += 1;
     }
 }

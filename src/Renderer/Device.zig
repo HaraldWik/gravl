@@ -10,17 +10,16 @@ handle: vk.Device,
 wrapper: *vk.DeviceWrapper,
 proxy: vk.DeviceProxy,
 graphics_queue: vk.Queue,
-command_pool: vk.CommandPool,
-immidiate_fence: vk.Fence,
 
 pub fn init(gpa: std.mem.Allocator, instance: Instance, physical_device: PhysicalDevice, extensions: []const [*:0]const u8) !Device {
     const properties = try instance.proxy.enumerateDeviceExtensionPropertiesAlloc(physical_device.handle, null, gpa);
     defer gpa.free(properties);
 
     for (extensions) |extension| for (properties) |property| {
-        const name: []const u8 = std.mem.sliceTo(&property.extension_name, 0);
-        if (!std.mem.eql(u8, std.mem.span(extension), name)) return error.MissingDeviceExtension;
-    };
+        const name = std.mem.sliceTo(&property.extension_name, 0);
+
+        if (std.mem.eql(u8, std.mem.span(extension), name)) break;
+    } else return error.MissingDeviceExtension;
 
     const features = instance.proxy.getPhysicalDeviceFeatures(physical_device.handle);
 
@@ -84,29 +83,15 @@ pub fn init(gpa: std.mem.Allocator, instance: Instance, physical_device: Physica
 
     const graphics_queue = proxy.getDeviceQueue(physical_device.graphics_queue_family_index, 0);
 
-    const command_pool_create_info: *const vk.CommandPoolCreateInfo = &.{
-        .queue_family_index = physical_device.graphics_queue_family_index,
-    };
-    const command_pool = try proxy.createCommandPool(command_pool_create_info, @ptrCast(@alignCast(gpa.ptr)));
-
-    const fence_create_info: *const vk.FenceCreateInfo = &.{
-        .flags = .{ .signaled_bit = true },
-    };
-    const fence = try proxy.createFence(fence_create_info, @ptrCast(@alignCast(gpa.ptr)));
-
     return .{
         .handle = handle,
         .wrapper = wrapper,
         .proxy = proxy,
         .graphics_queue = graphics_queue,
-        .command_pool = command_pool,
-        .immidiate_fence = fence,
     };
 }
 
 pub fn deinit(self: Device, gpa: std.mem.Allocator) void {
-    self.proxy.destroyFence(self.immidiate_fence, @ptrCast(@alignCast(gpa.ptr)));
-    self.proxy.destroyCommandPool(self.command_pool, @ptrCast(@alignCast(gpa.ptr)));
     self.proxy.destroyDevice(@ptrCast(@alignCast(gpa.ptr)));
     gpa.destroy(self.wrapper);
 }
