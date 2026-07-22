@@ -16,6 +16,15 @@
             .url = "git+https://github.com/SquareMan/zigwin32#01df0ea99ae90afc3f46117055ab788646872eba",
             .hash = "zigwin32-25.0.28-preview-qYSj4tyL5APmYxQI4_nKfd431j6VtaZnQkOb9IY6o5TR",
         },
+
+        .vulkan = .{
+            .url = "git+https://github.com/Snektron/vulkan-zig?ref=zig-0.16-compat#b496a6a561ffbbeb530b0f9ed4e059f88c0723a5",
+            .hash = "vulkan-0.0.0-r7Ytx7N9AwD7IZt5_XNHtkJ4G9qY0pCH-cpcOsbL8wzD",
+        },
+        .vulkan_headers = .{
+            .url = "git+https://github.com/KhronosGroup/Vulkan-Headers#f6a6f7ab165cedbfa2a7d0c93fe27a2d01ce09c8",
+            .hash = "N-V-__8AAC1ZbAIG2kVq3iPpAWaOlDTQ3MOyOyQQR0o_-9ez",
+        },
     },
     .paths = .{
         "build.zig",

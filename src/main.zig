@@ -2,10 +2,13 @@ const std = @import("std");
 const DynLib = @import("DynLib.zig");
 const Game = @import("Game.zig");
 const Window = @import("Window.zig");
+const Renderer = @import("Renderer.zig");
 
 const real_engine = @import("real_engine");
 
 pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
+
     var args = try init.minimal.args.iterateAllocator(init.arena.allocator());
     _ = args.skip();
 
@@ -29,6 +32,9 @@ pub fn main(init: std.process.Init) !void {
         },
     });
     defer window.close();
+
+    var renderer: Renderer = try .init(gpa, &window);
+    defer renderer.deinit();
 
     while (!window.should_close) {
         try window.poll();

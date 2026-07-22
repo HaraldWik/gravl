@@ -14,11 +14,12 @@ focused: bool = true,
 pub const empty: Window = undefined;
 
 pub const Inner = switch (builtin.os.tag) {
-    .windows => @import("Window/Win32.zig"),
-    .linux => union(LinuxSessionType) {
+    .linux, .freebsd, .netbsd, .openbsd => union(LinuxSessionType) {
         wayland: @import("Window/Wayland.zig"),
         x11: @import("Window/X.zig"),
     },
+    .windows => @import("Window/Win32.zig"),
+    .macos => @import("Window/Cocoa.zig"),
     else => struct {
         const open = @compileError("unsupported platform");
         const close = @compileError("unsupported platform");
@@ -108,6 +109,7 @@ pub fn open(self: *Window, init: std.process.Init, options: OpenOptions) !void {
 
 pub fn close(self: *Window) void {
     self.call(.close, .{}) catch unreachable;
+    self.* = undefined;
 }
 
 pub fn poll(self: *Window) !void {
@@ -115,7 +117,7 @@ pub fn poll(self: *Window) !void {
 }
 fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {
     switch (builtin.os.tag) {
-        .linux => switch (self.inner) {
+        .linux, .freebsd, .netbsd, .openbsd => switch (self.inner) {
             inline else => |*inner| {
                 const function = @field(@TypeOf(inner.*), @tagName(function_name));
                 return @call(.always_inline, function, .{ inner, self } ++ args);

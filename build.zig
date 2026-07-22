@@ -1,6 +1,8 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    const override_vulkan_registry = b.option([]const u8, "vulkan_registry", "Override the path to the Vulkan registry");
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -37,6 +39,15 @@ pub fn build(b: *std.Build) void {
 
     const win32 = b.dependency("win32", .{}).module("win32");
 
+    const vulkan_registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml");
+
+    const vulkan_registry_path: std.Build.LazyPath = if (override_vulkan_registry) |path|
+        .{ .cwd_relative = path }
+    else
+        vulkan_registry;
+
+    const vulkan = b.dependency("vulkan", .{ .registry = vulkan_registry_path }).module("vulkan-zig");
+
     const exe = b.addExecutable(.{
         .name = "real_engine",
         .root_module = b.createModule(.{
@@ -46,6 +57,8 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "wayland", .module = wayland },
                 .{ .name = "win32", .module = win32 },
+
+                .{ .name = "vulkan", .module = vulkan },
             },
             .link_libc = true,
         }),
