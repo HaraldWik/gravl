@@ -4,8 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const sdk = b.addModule("sdk", .{
-        .root_source_file = b.path("src/sdk.zig"),
+    const api = b.addModule("api", .{
+        .root_source_file = b.path("src/api.zig"),
         .target = target,
         .pic = true,
     });
@@ -59,11 +59,11 @@ pub fn build(b: *std.Build) void {
     // run_cmd.step.dependOn(b.getInstallStep());
     // if (b.args) |args| run_cmd.addArgs(args);
 
-    const sdk_tests = b.addTest(.{
-        .root_module = sdk,
+    const api_tests = b.addTest(.{
+        .root_module = api,
     });
 
-    const run_mod_tests = b.addRunArtifact(sdk_tests);
+    const run_mod_tests = b.addRunArtifact(api_tests);
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
     });

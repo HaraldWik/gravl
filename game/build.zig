@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "real_engine_sdk", .module = real_engine.module("sdk") },
+                .{ .name = "real_engine_api", .module = real_engine.module("api") },
             },
             .pic = true,
         }),

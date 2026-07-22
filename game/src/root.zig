@@ -1,11 +1,11 @@
 const std = @import("std");
-const sdk = @import("real_engine_sdk");
+const api = @import("real_engine_api");
 
 comptime {
-    _ = sdk;
+    _ = api;
 }
 
-pub const game_info: sdk.Game = .{
+pub const game_info: api.Game = .{
     .id = "my_game",
     .name = "My Game",
 };

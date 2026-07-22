@@ -3,23 +3,23 @@ const DynLib = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 
-const Backend = switch (builtin.os.tag) {
-    .windows => WindowsDynLib,
+const InnerType = switch (builtin.os.tag) {
+    .windows, .wasi => WindowsDynLib,
     else => std.DynLib,
 };
 
-backend: Backend,
+inner: InnerType,
 
 pub fn open(path: []const u8) !DynLib {
-    return .{ .backend = try Backend.open(path) };
+    return .{ .inner = try InnerType.open(path) };
 }
 
 pub fn close(self: *DynLib) void {
-    self.backend.close();
+    self.inner.close();
 }
 
 pub fn lookup(self: *DynLib, comptime T: type, name: [:0]const u8) ?T {
-    return self.backend.lookup(T, name);
+    return self.inner.lookup(T, name);
 }
 
 const WindowsDynLib = struct {
