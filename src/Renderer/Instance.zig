@@ -7,7 +7,11 @@ handle: vk.Instance,
 wrapper: *vk.InstanceWrapper,
 proxy: vk.InstanceProxy,
 
-pub const InitError = vk.BaseWrapper.CreateInstanceError || vk.BaseWrapper.EnumerateInstanceVersionError || std.mem.Allocator.Error || error{VulkanVersionTooOld};
+pub const InitError =
+    vk.BaseWrapper.CreateInstanceError ||
+    vk.BaseWrapper.EnumerateInstanceVersionError ||
+    std.mem.Allocator.Error ||
+    error{VulkanVersionTooOld};
 
 pub fn init(
     gpa: std.mem.Allocator,
@@ -40,7 +44,7 @@ pub fn init(
         return error.VulkanVersionTooOld;
     }
 
-    const handle = vkb.createInstance(create_info, null) catch |err| return switch (err) {
+    const handle = vkb.createInstance(create_info, @ptrCast(@alignCast(gpa.ptr))) catch |err| return switch (err) {
         error.LayerNotPresent => Instance.init(gpa, vkb, &.{}, extensions),
         else => err,
     };
@@ -59,6 +63,6 @@ pub fn init(
 }
 
 pub fn deinit(self: Instance, gpa: std.mem.Allocator) void {
-    self.proxy.destroyInstance(null);
+    self.proxy.destroyInstance(@ptrCast(@alignCast(gpa.ptr)));
     gpa.destroy(self.wrapper);
 }

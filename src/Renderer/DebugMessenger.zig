@@ -7,11 +7,11 @@ const Instance = @import("Instance.zig");
 
 handle: vk.DebugUtilsMessengerEXT,
 
-pub fn init(instance: Instance) vk.InstanceWrapper.CreateDebugUtilsMessengerEXTError!DebugMessenger {
+pub fn init(gpa: std.mem.Allocator, instance: Instance) vk.InstanceWrapper.CreateDebugUtilsMessengerEXTError!DebugMessenger {
     const create_info: *const vk.DebugUtilsMessengerCreateInfoEXT = &.{
         .message_severity = .{
-            .verbose_bit_ext = true,
-            .info_bit_ext = true,
+            // .verbose_bit_ext = true,
+            // .info_bit_ext = true,
             .warning_bit_ext = true,
             .error_bit_ext = true,
         },
@@ -24,12 +24,12 @@ pub fn init(instance: Instance) vk.InstanceWrapper.CreateDebugUtilsMessengerEXTE
         .p_user_data = null,
     };
 
-    const handle = try instance.proxy.createDebugUtilsMessengerEXT(create_info, null);
+    const handle = try instance.proxy.createDebugUtilsMessengerEXT(create_info, @ptrCast(@alignCast(gpa.ptr)));
     return .{ .handle = handle };
 }
 
-pub fn deinit(self: DebugMessenger, instance: Instance) void {
-    instance.proxy.destroyDebugUtilsMessengerEXT(self.handle, null);
+pub fn deinit(self: DebugMessenger, gpa: std.mem.Allocator, instance: Instance) void {
+    instance.proxy.destroyDebugUtilsMessengerEXT(self.handle, @ptrCast(@alignCast(gpa.ptr)));
 }
 
 fn callback(
@@ -54,8 +54,9 @@ fn callback(
 
     switch (level) {
         inline else => |l| {
+            const msg = data.?;
             const log = std.options.logFn;
-            log(l, .vulkan, "[{d}] {s}", .{ data.?.message_id_number, data.?.p_message orelse "" });
+            log(l, .vulkan, "[{s}] {d}: {s}", .{ msg.p_message_id_name orelse "", msg.message_id_number, msg.p_message orelse "" });
         },
     }
 

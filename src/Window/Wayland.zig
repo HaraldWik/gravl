@@ -71,6 +71,7 @@ pub fn close(self: *Wayland, window: *Window) void {
 pub fn poll(self: *Wayland, window: *Window) !void {
     _ = window;
     const display = self.display;
+
     if (display.dispatchPending() != .SUCCESS) return error.DisplayDispatchPending;
     if (display.prepareRead()) {
         if (display.flush() != .SUCCESS) return error.DisplayFlush;
