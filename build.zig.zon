@@ -1,0 +1,25 @@
+.{
+    .name = .real_engine,
+    .version = "0.0.0",
+    .fingerprint = 0xbaac97894140da1d,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .wayland = .{
+            .url = "git+https://github.com/HaraldWik/zig-wayland#6f8c31f47299b70cf02e8c7d15e07379f3dceb05",
+            .hash = "wayland-0.5.0-dev-lQa1kon9AQAqOJxIINbYDrDekiRI5p9bnvtFoi6Pic34",
+        },
+        .wayland_protocols = .{
+            .url = "git+https://gitlab.freedesktop.org/wayland/wayland-protocols#02e63e74a807afed95bc25a386173110afef24e3",
+            .hash = "N-V-__8AAMCWEADA0AS-1LfBEtixZLJAb_XQKQpgSmR2uxAO",
+        },
+        .win32 = .{
+            .url = "git+https://github.com/SquareMan/zigwin32#01df0ea99ae90afc3f46117055ab788646872eba",
+            .hash = "zigwin32-25.0.28-preview-qYSj4tyL5APmYxQI4_nKfd431j6VtaZnQkOb9IY6o5TR",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
