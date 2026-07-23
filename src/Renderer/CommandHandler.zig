@@ -60,7 +60,7 @@ pub fn deinit(self: CommandHandler, gpa: std.mem.Allocator, device: Device) void
     device.proxy.destroyCommandPool(self.command_pool, @ptrCast(@alignCast(gpa.ptr)));
 }
 
-pub fn record(self: *CommandHandler, device: Device, swapchain: Swapchain) !void {
+pub fn begin(self: *CommandHandler, device: Device, swapchain: Swapchain) !void {
     const frame = self.frames[self.frame_index % frames_in_flight];
     const command_buffer = frame.command_buffer;
 
@@ -112,7 +112,7 @@ pub fn record(self: *CommandHandler, device: Device, swapchain: Swapchain) !void
     device.proxy.cmdSetScissor(command_buffer, 0, &.{scissor});
 
     const clear_color: vk.ClearValue = .{
-        .color = .{ .float_32 = .{ 1.0, 0.0, 0.0, 1.0 } },
+        .color = .{ .float_32 = .{ 0.0, 0.0, 0.0, 1.0 } },
     };
     const color_attachment_infos: []const vk.RenderingAttachmentInfo = &.{
         .{
@@ -138,8 +138,11 @@ pub fn record(self: *CommandHandler, device: Device, swapchain: Swapchain) !void
     };
 
     device.proxy.cmdBeginRendering(command_buffer, rendering_info);
+}
 
-    // bind, draw
+pub fn end(self: *CommandHandler, device: Device, swapchain: Swapchain) !void {
+    const frame = self.frames[self.frame_index % frames_in_flight];
+    const command_buffer = frame.command_buffer;
 
     device.proxy.cmdEndRendering(command_buffer);
 

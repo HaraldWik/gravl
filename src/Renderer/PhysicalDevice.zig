@@ -51,7 +51,7 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
         const score: i32 = switch (properties.device_type) {
             .discrete_gpu => 1000,
             .integrated_gpu => 100,
-            .virtual_gpu => 50,
+            .virtual_gpu => 67,
             .cpu => 10,
             else => 0,
         };

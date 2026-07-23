@@ -17,6 +17,8 @@ const Device = @import("Renderer/Device.zig");
 const Swapchain = @import("Renderer/Swapchain.zig");
 const CommandHandler = @import("Renderer/CommandHandler.zig");
 
+pub const Pipeline = @import("Renderer/Pipeline.zig");
+
 gpa_impl: *Allocator,
 gpa: std.mem.Allocator,
 
@@ -136,7 +138,7 @@ pub fn deinit(self: *Renderer) void {
     self.* = undefined;
 }
 
-pub fn render(self: *Renderer, size: Window.Size) !void {
+pub fn acquire(self: *Renderer, size: Window.Size) !void {
     const device = self.device;
     const swapchain = &self.*.swapchain;
     const frame = self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
@@ -158,7 +160,15 @@ pub fn render(self: *Renderer, size: Window.Size) !void {
 
     try device.proxy.resetCommandBuffer(frame.command_buffer, .{});
 
-    try self.command_handler.record(self.device, swapchain.*);
+    try self.command_handler.begin(self.device, swapchain.*);
+}
+
+pub fn submit(self: *Renderer, size: Window.Size) !void {
+    const device = self.device;
+    const swapchain = self.swapchain;
+    const frame = self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
+
+    try self.command_handler.end(device, swapchain);
 
     const wait_semaphores: []const vk.Semaphore = &.{
         frame.image_available,
@@ -198,6 +208,15 @@ pub fn render(self: *Renderer, size: Window.Size) !void {
     };
 
     self.command_handler.frame_index += 1;
+}
+
+pub fn bindPipeline(self: *Renderer, pipeline: Pipeline) void {
+    const device = self.device;
+    const frame = self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
+    const command_buffer = frame.command_buffer;
+
+    device.proxy.cmdBindPipeline(command_buffer, .graphics, pipeline.handle);
+    device.proxy.cmdDraw(command_buffer, 3, 1, 0, 0);
 }
 
 pub fn resize(self: *Renderer, size: Window.Size) !void {
