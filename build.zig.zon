@@ -1,7 +1,7 @@
 .{
-    .name = .real_engine,
+    .name = .gravl,
     .version = "0.0.0",
-    .fingerprint = 0xbaac97894140da1d,
+    .fingerprint = 0x58726643cc67aa34,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .wayland = .{

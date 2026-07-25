@@ -42,21 +42,64 @@ pub fn main(init: std.process.Init) !void {
     const shaders = try std.Io.Dir.cwd().openDir(io, "../shaders", .{});
     defer shaders.close(io);
 
-    const fragment_source = try shaders.readFileAllocOptions(io, "main.frag.spv", gpa, .unlimited, .@"4", null);
-    const vertex_source = try shaders.readFileAllocOptions(io, "main.vert.spv", gpa, .unlimited, .@"4", null);
+    const vertex_source = try shaders.readFileAlloc(io, "main.vert.spv", gpa, .unlimited);
+    defer gpa.free(vertex_source);
+    const fragment_source = try shaders.readFileAlloc(io, "main.frag.spv", gpa, .unlimited);
+    defer gpa.free(fragment_source);
 
-    const pipeline: Renderer.Pipeline = try .init(renderer.gpa, renderer.device, renderer.swapchain, .{
-        .fragment_source = fragment_source,
-        .vertex_source = vertex_source,
+    const vertex2_source = try shaders.readFileAlloc(io, "main2.vert.spv", gpa, .unlimited);
+    defer gpa.free(vertex2_source);
+
+    std.log.info("vertex bytes: {d}", .{vertex_source.len});
+    std.log.info("vertex words: {d}", .{fragment_source.len});
+    const words = std.mem.bytesAsSlice(u32, vertex_source[0..4]);
+    std.log.info("magic: 0x{x}", .{words[0]});
+
+    const vertex, const fragment = try Renderer.ShaderObject.initMany(2, renderer.gpa, renderer.device, .{
+        .{
+            .stage = .vertex,
+            .next_stage = .fragment,
+            .source = vertex_source,
+        },
+        .{
+            .stage = .fragment,
+            .source = fragment_source,
+        },
     });
-    defer pipeline.deinit(renderer.gpa, renderer.device);
+    defer {
+        vertex.deinit(renderer.gpa, renderer.device);
+        fragment.deinit(renderer.gpa, renderer.device);
+    }
+
+    const vertex2: Renderer.ShaderObject = try .initSingle(renderer.gpa, renderer.device, .{
+        .stage = .vertex,
+        .source = vertex2_source,
+    });
+    defer vertex2.deinit(renderer.gpa, renderer.device);
+
+    // const pipeline: Renderer.Pipeline = try .init(renderer.gpa, renderer.device, renderer.swapchain, .{
+    //     .fragment_source = fragment_source,
+    //     .vertex_source = vertex_source,
+    // });
+    // defer pipeline.deinit(renderer.gpa, renderer.device);
 
     while (!window.should_close) {
         try window.poll();
 
         try renderer.acquire(window.size);
 
-        renderer.bindPipeline(pipeline);
+        renderer.bindShaders(.{
+            .vertex = vertex,
+            .fragment = fragment,
+        });
+
+        if (renderer.command_handler.frame_index % 120 > 60) {
+            renderer.bindShaders(.{ .vertex = vertex2 });
+        }
+
+        renderer.draw();
+
+        // renderer.bindPipeline(pipeline);
 
         try renderer.submit(window.size);
         try renderer.resize(window.size);

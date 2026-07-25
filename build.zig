@@ -49,7 +49,7 @@ pub fn build(b: *std.Build) void {
     const vulkan = b.dependency("vulkan", .{ .registry = vulkan_registry_path }).module("vulkan-zig");
 
     const exe = b.addExecutable(.{
-        .name = "real_engine",
+        .name = "gravl",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,

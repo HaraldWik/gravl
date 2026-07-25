@@ -87,6 +87,7 @@ fn build(
     );
     defer gpa.free(formats);
 
+    // TODO: fix
     const surface_format: vk.SurfaceFormatKHR = formats[0];
     // for (formats) |format| {
     //     if (format.format == .r8g8b8_srgb and
@@ -368,12 +369,10 @@ pub fn deinit(
         device.proxy.destroySemaphore(semaphore, null);
     }
 
-    if (swapchain.handle != .null_handle) {
-        device.proxy.destroySwapchainKHR(
-            swapchain.handle,
-            null,
-        );
-    }
+    if (swapchain.handle != .null_handle) device.proxy.destroySwapchainKHR(
+        swapchain.handle,
+        null,
+    );
 
     gpa.free(swapchain.finished);
     gpa.free(swapchain.image_views);

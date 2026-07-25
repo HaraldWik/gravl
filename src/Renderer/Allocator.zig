@@ -74,18 +74,10 @@ const vulkan = struct {
         const extra = @sizeOf(Header) + alignment;
         const total_size = size + extra;
 
-        const memory = gpa.alignedAlloc(
-            u8,
-            .of(Header),
-            total_size,
-        ) catch return null;
+        const memory = gpa.alignedAlloc(u8, .of(Header), total_size) catch return null;
 
         const base = @intFromPtr(memory.ptr);
-        const aligned = std.mem.alignForward(
-            usize,
-            base + @sizeOf(Header),
-            alignment,
-        );
+        const aligned = std.mem.alignForward(usize, base + @sizeOf(Header), alignment);
 
         const header: *Header = @ptrFromInt(aligned - @sizeOf(Header));
         header.* = .{
@@ -104,8 +96,7 @@ const vulkan = struct {
         alignment: usize,
         scope: vk.SystemAllocationScope,
     ) callconv(.c) ?*anyopaque {
-        if (old_memory == null)
-            return alloc(userdata, new_size, alignment, scope);
+        if (old_memory == null) return alloc(userdata, new_size, alignment, scope);
 
         if (new_size == 0) {
             free(userdata, old_memory);
@@ -113,9 +104,7 @@ const vulkan = struct {
         }
 
         const old_ptr: [*]u8 = @ptrCast(old_memory.?);
-        const header: *Header = @ptrFromInt(
-            @intFromPtr(old_ptr) - @sizeOf(Header),
-        );
+        const header: *Header = @ptrFromInt(@intFromPtr(old_ptr) - @sizeOf(Header));
 
         const new_memory = alloc(
             userdata,
@@ -124,10 +113,7 @@ const vulkan = struct {
             scope,
         ) orelse return null;
 
-        @memcpy(
-            @as([*]u8, @ptrCast(new_memory))[0..@min(header.size, new_size)],
-            old_ptr[0..@min(header.size, new_size)],
-        );
+        @memcpy(@as([*]u8, @ptrCast(new_memory))[0..@min(header.size, new_size)], old_ptr[0..@min(header.size, new_size)]);
 
         free(userdata, old_memory);
 
@@ -142,16 +128,10 @@ const vulkan = struct {
 
         const ptr: [*]u8 = @ptrCast(memory.?);
 
-        const header: *Header = @ptrFromInt(
-            @intFromPtr(ptr) - @sizeOf(Header),
-        );
+        const header: *Header = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(Header));
 
         const original: [*]u8 = ptr - header.offset;
 
-        gpa.rawFree(
-            original[0..header.total_size],
-            .of(Header),
-            @returnAddress(),
-        );
+        gpa.rawFree(original[0..header.total_size], .of(Header), @returnAddress());
     }
 };

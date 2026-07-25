@@ -39,13 +39,13 @@ pub fn init(gpa: std.mem.Allocator, instance: Instance, physical_device: Physica
         .synchronization_2 = .true,
     };
 
-    var shader_obj_features: vk.PhysicalDeviceShaderObjectFeaturesEXT = .{
+    var shader_object_features: vk.PhysicalDeviceShaderObjectFeaturesEXT = .{
         .p_next = &sync2_features,
         .shader_object = .true,
     };
 
     var buffer_device_address_features: vk.PhysicalDeviceBufferDeviceAddressFeatures = .{
-        .p_next = &shader_obj_features,
+        .p_next = &shader_object_features,
         .buffer_device_address = .true,
     };
 
@@ -54,6 +54,7 @@ pub fn init(gpa: std.mem.Allocator, instance: Instance, physical_device: Physica
         .descriptor_buffer = .true,
         .descriptor_buffer_push_descriptors = .true,
     };
+
     var inline_uniform_block_features: vk.PhysicalDeviceInlineUniformBlockFeatures = .{
         .p_next = &descriptor_buffer_features,
         .inline_uniform_block = .true,

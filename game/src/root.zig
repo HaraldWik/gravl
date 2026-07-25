@@ -1,11 +1,11 @@
 const std = @import("std");
-const api = @import("real_engine_api");
+const gv = @import("gravl");
 
 comptime {
-    _ = api;
+    _ = gv;
 }
 
-pub const game_info: api.Game = .{
+pub const game_info: gv.Game = .{
     .id = "my_game",
     .name = "My Game",
 };

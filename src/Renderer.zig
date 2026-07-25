@@ -16,8 +16,10 @@ const PhysicalDevice = @import("Renderer/PhysicalDevice.zig");
 const Device = @import("Renderer/Device.zig");
 const Swapchain = @import("Renderer/Swapchain.zig");
 const CommandHandler = @import("Renderer/CommandHandler.zig");
+const Buffer = @import("Renderer/Buffer.zig");
 
 pub const Pipeline = @import("Renderer/Pipeline.zig");
+pub const ShaderObject = @import("Renderer/ShaderObject.zig");
 
 gpa_impl: *Allocator,
 gpa: std.mem.Allocator,
@@ -78,6 +80,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
 
     const device_extensions: []const [*:0]const u8 = &.{
         vk.extensions.khr_swapchain.name,
+        vk.extensions.ext_shader_object.name,
     };
 
     const gpa_impl = try Allocator.init(allocator);
@@ -138,10 +141,14 @@ pub fn deinit(self: *Renderer) void {
     self.* = undefined;
 }
 
+fn getFrame(self: Renderer) CommandHandler.FrameData {
+    return self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
+}
+
 pub fn acquire(self: *Renderer, size: Window.Size) !void {
     const device = self.device;
     const swapchain = &self.*.swapchain;
-    const frame = self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
+    const frame = self.getFrame();
 
     _ = try device.proxy.waitForFences(&.{frame.in_flight_fence}, .true, std.math.maxInt(u64));
     try device.proxy.resetFences(&.{frame.in_flight_fence});
@@ -166,7 +173,7 @@ pub fn acquire(self: *Renderer, size: Window.Size) !void {
 pub fn submit(self: *Renderer, size: Window.Size) !void {
     const device = self.device;
     const swapchain = self.swapchain;
-    const frame = self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
+    const frame = self.getFrame();
 
     try self.command_handler.end(device, swapchain);
 
@@ -210,15 +217,6 @@ pub fn submit(self: *Renderer, size: Window.Size) !void {
     self.command_handler.frame_index += 1;
 }
 
-pub fn bindPipeline(self: *Renderer, pipeline: Pipeline) void {
-    const device = self.device;
-    const frame = self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
-    const command_buffer = frame.command_buffer;
-
-    device.proxy.cmdBindPipeline(command_buffer, .graphics, pipeline.handle);
-    device.proxy.cmdDraw(command_buffer, 3, 1, 0, 0);
-}
-
 pub fn resize(self: *Renderer, size: Window.Size) !void {
     if (size.width == 0 or size.height == 0) return;
     if (size.width == self.swapchain.extent.width and size.height == self.swapchain.extent.height) return;
@@ -232,4 +230,195 @@ pub fn resize(self: *Renderer, size: Window.Size) !void {
         size,
         self.command_handler.frame_index,
     );
+}
+
+pub fn bindPipeline(self: Renderer, pipeline: Pipeline) void {
+    const device = self.device;
+    const frame = self.getFrame();
+    device.proxy.cmdBindPipeline(frame.command_buffer, .graphics, pipeline.handle);
+}
+
+pub const ShaderBinding = struct {
+    vertex: ShaderObject = .{ .handle = .null_handle, .stage = .vertex },
+    tessellation_control: ShaderObject = .{ .handle = .null_handle, .stage = .tessellation_control },
+    tessellation_evaluation: ShaderObject = .{ .handle = .null_handle, .stage = .tessellation_evaluation },
+    geometry: ShaderObject = .{ .handle = .null_handle, .stage = .geometry },
+    fragment: ShaderObject = .{ .handle = .null_handle, .stage = .fragment },
+};
+
+pub fn bindShaders(self: Renderer, shader_binding: ShaderBinding) void {
+    const shader_count = std.meta.fields(ShaderBinding).len;
+
+    var handles: [shader_count]vk.ShaderEXT = undefined;
+    var stages: [shader_count]ShaderObject.Stage = undefined;
+
+    inline for (std.meta.fields(ShaderBinding), 0..) |field, i| {
+        const shader: ShaderObject = @field(shader_binding, field.name);
+        handles[i] = shader.handle;
+        stages[i] = if (shader.handle != .null_handle) shader.stage else ShaderObject.Stage.none;
+    }
+
+    const device = self.device;
+    const frame = self.getFrame();
+    device.proxy.cmdBindShadersEXT(frame.command_buffer, @ptrCast(&stages), &handles);
+    // viewport
+    device.proxy.cmdSetViewportWithCount(
+        frame.command_buffer,
+        &.{.{
+            .x = 0,
+            .y = 0,
+            .width = @floatFromInt(self.swapchain.extent.width),
+            .height = @floatFromInt(self.swapchain.extent.height),
+            .min_depth = 0.0,
+            .max_depth = 1.0,
+        }},
+    );
+
+    // scissor
+    device.proxy.cmdSetScissorWithCount(
+        frame.command_buffer,
+        &.{.{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = self.swapchain.extent,
+        }},
+    );
+
+    // input assembly
+    device.proxy.cmdSetPrimitiveTopology(
+        frame.command_buffer,
+        .triangle_list,
+    );
+
+    device.proxy.cmdSetPrimitiveRestartEnable(
+        frame.command_buffer,
+        .false,
+    );
+
+    // vertex input (empty)
+    device.proxy.cmdSetVertexInputEXT(
+        frame.command_buffer,
+        null,
+        null,
+    );
+
+    // rasterizer
+    device.proxy.cmdSetRasterizerDiscardEnable(
+        frame.command_buffer,
+        .false,
+    );
+
+    device.proxy.cmdSetPolygonModeEXT(
+        frame.command_buffer,
+        .fill,
+    );
+
+    device.proxy.cmdSetCullMode(
+        frame.command_buffer,
+        .{},
+    );
+
+    device.proxy.cmdSetFrontFace(
+        frame.command_buffer,
+        .counter_clockwise,
+    );
+
+    device.proxy.cmdSetDepthBiasEnable(
+        frame.command_buffer,
+        .false,
+    );
+
+    device.proxy.cmdSetDepthClampEnableEXT(
+        frame.command_buffer,
+        .false,
+    );
+
+    // multisampling
+    device.proxy.cmdSetRasterizationSamplesEXT(
+        frame.command_buffer,
+        .{ .@"1_bit" = true },
+    );
+
+    device.proxy.cmdSetSampleMaskEXT(
+        frame.command_buffer,
+        .{ .@"1_bit" = true },
+        &.{0xffffffff},
+    );
+
+    device.proxy.cmdSetAlphaToCoverageEnableEXT(
+        frame.command_buffer,
+        .false,
+    );
+
+    device.proxy.cmdSetAlphaToOneEnableEXT(
+        frame.command_buffer,
+        .false,
+    );
+
+    // depth/stencil
+    device.proxy.cmdSetDepthTestEnable(
+        frame.command_buffer,
+        .false,
+    );
+
+    device.proxy.cmdSetDepthWriteEnable(
+        frame.command_buffer,
+        .false,
+    );
+
+    device.proxy.cmdSetDepthCompareOp(
+        frame.command_buffer,
+        .less,
+    );
+
+    device.proxy.cmdSetDepthBoundsTestEnable(
+        frame.command_buffer,
+        .false,
+    );
+
+    device.proxy.cmdSetStencilTestEnable(
+        frame.command_buffer,
+        .false,
+    );
+
+    // blending
+    device.proxy.cmdSetColorBlendEnableEXT(
+        frame.command_buffer,
+        0,
+        &.{.true},
+    );
+
+    device.proxy.cmdSetColorBlendEquationEXT(
+        frame.command_buffer,
+        0,
+        &.{.{
+            .src_color_blend_factor = .src_alpha,
+            .dst_color_blend_factor = .one_minus_src_alpha,
+            .color_blend_op = .add,
+            .src_alpha_blend_factor = .one,
+            .dst_alpha_blend_factor = .zero,
+            .alpha_blend_op = .add,
+        }},
+    );
+
+    device.proxy.cmdSetColorWriteMaskEXT(
+        frame.command_buffer,
+        0,
+        &.{.{
+            .r_bit = true,
+            .g_bit = true,
+            .b_bit = true,
+            .a_bit = true,
+        }},
+    );
+
+    device.proxy.cmdSetLogicOpEnableEXT(
+        frame.command_buffer,
+        .false,
+    );
+}
+
+pub fn draw(self: Renderer) void {
+    const device = self.device;
+    const frame = self.getFrame();
+    device.proxy.cmdDraw(frame.command_buffer, 3, 1, 0, 0);
 }
