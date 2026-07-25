@@ -1,6 +1,6 @@
 const Win32 = @This();
 
-// zig build -Dtarget=x86_64-windows && wine zig-out/bin/real_engine.exe
+// zig build -Dtarget=x86_64-windows && wine zig-out/bin/gravl.exe
 
 const std = @import("std");
 const win32 = @import("win32").everything;

@@ -25,8 +25,22 @@ pub const Description = struct {
     entry_name: [*:0]const u8 = "main",
 };
 
-pub fn initSingle(gpa: std.mem.Allocator, device: Device, description: Description) !ShaderObject {
-    return (try ShaderObject.initMany(1, gpa, device, .{description}))[0];
+pub fn init(gpa: std.mem.Allocator, device: Device, description: Description) !ShaderObject {
+    const create_info: *const vk.ShaderCreateInfoEXT = &.{
+        .stage = @bitCast(@intFromEnum(description.stage)),
+        .next_stage = @bitCast(@intFromEnum(description.next_stage)),
+        .code_type = .spirv_ext,
+        .code_size = description.source.len,
+        .p_code = @ptrCast(description.source.ptr),
+        .p_name = description.entry_name,
+    };
+
+    var handle: vk.ShaderEXT = undefined;
+    _ = try device.proxy.createShadersEXT(&.{create_info.*}, @ptrCast(@alignCast(gpa.ptr)), @ptrCast(&handle));
+    return .{
+        .handle = handle,
+        .stage = description.stage,
+    };
 }
 
 pub fn initMany(comptime count: usize, gpa: std.mem.Allocator, device: Device, descriptions: [count]Description) ![count]ShaderObject {

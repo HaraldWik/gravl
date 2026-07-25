@@ -55,24 +55,22 @@ pub fn main(init: std.process.Init) !void {
     const words = std.mem.bytesAsSlice(u32, vertex_source[0..4]);
     std.log.info("magic: 0x{x}", .{words[0]});
 
-    const vertex, const fragment = try Renderer.ShaderObject.initMany(2, renderer.gpa, renderer.device, .{
-        .{
-            .stage = .vertex,
-            .next_stage = .fragment,
-            .source = vertex_source,
-        },
-        .{
-            .stage = .fragment,
-            .source = fragment_source,
-        },
-    });
-    defer {
-        vertex.deinit(renderer.gpa, renderer.device);
-        fragment.deinit(renderer.gpa, renderer.device);
-    }
-
-    const vertex2: Renderer.ShaderObject = try .initSingle(renderer.gpa, renderer.device, .{
+    const vertex: Renderer.ShaderObject = try .init(renderer.gpa, renderer.device, .{
         .stage = .vertex,
+        .next_stage = .fragment,
+        .source = vertex_source,
+    });
+    defer vertex.deinit(renderer.gpa, renderer.device);
+
+    const fragment: Renderer.ShaderObject = try .init(renderer.gpa, renderer.device, .{
+        .stage = .fragment,
+        .source = fragment_source,
+    });
+    defer fragment.deinit(renderer.gpa, renderer.device);
+
+    const vertex2: Renderer.ShaderObject = try .init(renderer.gpa, renderer.device, .{
+        .stage = .vertex,
+        .next_stage = .fragment,
         .source = vertex2_source,
     });
     defer vertex2.deinit(renderer.gpa, renderer.device);
@@ -88,13 +86,14 @@ pub fn main(init: std.process.Init) !void {
 
         try renderer.acquire(window.size);
 
-        renderer.bindShaders(.{
-            .vertex = vertex,
-            .fragment = fragment,
-        });
+        renderer.bindShader(fragment);
+        renderer.bindShader(vertex);
+        renderer.bindShader(.{ .handle = .null_handle, .stage = .geometry });
+        renderer.bindShader(.{ .handle = .null_handle, .stage = .tessellation_control });
+        renderer.bindShader(.{ .handle = .null_handle, .stage = .tessellation_evaluation });
 
-        if (renderer.command_handler.frame_index % 120 > 60) {
-            renderer.bindShaders(.{ .vertex = vertex2 });
+        if (renderer.command_handler.frame_index % 3000 > 1500) {
+            renderer.bindShader(vertex2);
         }
 
         renderer.draw();

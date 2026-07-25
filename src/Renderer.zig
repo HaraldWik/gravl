@@ -238,29 +238,29 @@ pub fn bindPipeline(self: Renderer, pipeline: Pipeline) void {
     device.proxy.cmdBindPipeline(frame.command_buffer, .graphics, pipeline.handle);
 }
 
-pub const ShaderBinding = struct {
-    vertex: ShaderObject = .{ .handle = .null_handle, .stage = .vertex },
-    tessellation_control: ShaderObject = .{ .handle = .null_handle, .stage = .tessellation_control },
-    tessellation_evaluation: ShaderObject = .{ .handle = .null_handle, .stage = .tessellation_evaluation },
-    geometry: ShaderObject = .{ .handle = .null_handle, .stage = .geometry },
-    fragment: ShaderObject = .{ .handle = .null_handle, .stage = .fragment },
-};
+// pub const ShaderBinding = struct {
+//     vertex: ShaderObject = .{ .handle = .null_handle, .stage = .vertex },
+//     tessellation_control: ShaderObject = .{ .handle = .null_handle, .stage = .tessellation_control },
+//     tessellation_evaluation: ShaderObject = .{ .handle = .null_handle, .stage = .tessellation_evaluation },
+//     geometry: ShaderObject = .{ .handle = .null_handle, .stage = .geometry },
+//     fragment: ShaderObject = .{ .handle = .null_handle, .stage = .fragment },
+// };
 
-pub fn bindShaders(self: Renderer, shader_binding: ShaderBinding) void {
-    const shader_count = std.meta.fields(ShaderBinding).len;
+pub fn bindShader(self: Renderer, shader_object: ShaderObject) void {
+    // const shader_count = std.meta.fields(ShaderBinding).len;
 
-    var handles: [shader_count]vk.ShaderEXT = undefined;
-    var stages: [shader_count]ShaderObject.Stage = undefined;
+    // var handles: [shader_count]vk.ShaderEXT = undefined;
+    // var stages: [shader_count]ShaderObject.Stage = undefined;
 
-    inline for (std.meta.fields(ShaderBinding), 0..) |field, i| {
-        const shader: ShaderObject = @field(shader_binding, field.name);
-        handles[i] = shader.handle;
-        stages[i] = if (shader.handle != .null_handle) shader.stage else ShaderObject.Stage.none;
-    }
+    // inline for (std.meta.fields(ShaderBinding), 0..) |field, i| {
+    //     const shader: ShaderObject = @field(shader_binding, field.name);
+    //     handles[i] = shader.handle;
+    //     stages[i] = if (shader.handle != .null_handle) shader.stage else ShaderObject.Stage.none;
+    // }
 
     const device = self.device;
     const frame = self.getFrame();
-    device.proxy.cmdBindShadersEXT(frame.command_buffer, @ptrCast(&stages), &handles);
+    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{@bitCast(@intFromEnum(shader_object.stage))}, &.{shader_object.handle});
     // viewport
     device.proxy.cmdSetViewportWithCount(
         frame.command_buffer,
