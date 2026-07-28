@@ -26,6 +26,9 @@ pub const Description = struct {
 };
 
 pub fn init(gpa: std.mem.Allocator, device: Device, description: Description) !ShaderObject {
+    const magic = std.mem.readInt(u32, @ptrCast(std.mem.bytesAsSlice(u32, description.source[0..4])), .little);
+    std.debug.assert(magic == 0x7230203);
+
     const create_info: *const vk.ShaderCreateInfoEXT = &.{
         .stage = @bitCast(@intFromEnum(description.stage)),
         .next_stage = @bitCast(@intFromEnum(description.next_stage)),

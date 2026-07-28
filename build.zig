@@ -37,6 +37,8 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wp_cursor_shape_manager_v1", 2);
     scanner.generate("zwp_tablet_manager_v2", 1);
 
+    const xcb = b.dependency("xcb", .{ .target = target, .optimize = optimize }).module("xcb");
+
     const win32 = b.dependency("win32", .{}).module("win32");
 
     const vulkan_registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml");
@@ -56,13 +58,19 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "wayland", .module = wayland },
+                .{ .name = "xcb", .module = xcb },
                 .{ .name = "win32", .module = win32 },
 
                 .{ .name = "vulkan", .module = vulkan },
             },
-            .link_libc = true,
+            .link_libc = switch (target.result.os.tag) {
+                .windows => false,
+                else => true,
+            },
         }),
     });
+
+    exe.root_module.linkSystemLibrary("xcb", .{});
 
     b.installArtifact(exe);
 

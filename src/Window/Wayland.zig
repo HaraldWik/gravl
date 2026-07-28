@@ -84,20 +84,30 @@ pub fn poll(self: *Wayland, window: *Window) !void {
 
     if (window.should_close) return;
 
-    if (display.dispatchPending() != .SUCCESS) return error.DisplayDispatchPending;
-
     if (display.prepareRead()) {
-        if (display.flush() != .SUCCESS) return error.DisplayFlush;
+        while (true) {
+            switch (display.flush()) {
+                .SUCCESS => break,
+                .AGAIN, .INTR => continue,
+                .PIPE => return error.CompositorDisconnected,
+                else => return error.Flush,
+            }
+        }
+
         var pfd: std.posix.pollfd = .{
             .fd = @intCast(display.getFd()),
             .events = std.posix.POLL.IN,
             .revents = 0,
         };
-        if (std.posix.poll(@ptrCast(&pfd), 1) catch 0 > 0)
-            if (display.readEvents() != .SUCCESS) return error.DisplayReadEvents else display.cancelRead();
 
-        if (display.dispatchPending() != .SUCCESS) return error.DisplayDispatchPending;
+        if (std.posix.poll(@ptrCast(&pfd), 1) catch 0 > 0) {
+            if (display.readEvents() != .SUCCESS) return error.ReadEvents;
+        } else {
+            display.cancelRead();
+        }
     }
+
+    if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
 }
 
 const RegistryData = struct {
@@ -185,8 +195,9 @@ fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland) void
 }
 
 fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, self: *Wayland) void {
-    _ = event;
     _ = self;
+
+    std.log.info("keyboard: {t}", .{event});
 }
 
 var loader: Loader = .{};

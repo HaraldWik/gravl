@@ -13,7 +13,6 @@ class: win32.WNDCLASSEXW,
 hwnd: std.os.windows.HWND,
 
 pub fn open(self: *Win32, window: *Window, options: Window.OpenOptions, gpa: std.mem.Allocator) anyerror!void {
-    _ = window;
     const hinstance: std.os.windows.HINSTANCE = @ptrCast(win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle);
 
     const class = std.mem.zeroInit(win32.WNDCLASSEXW, .{
@@ -40,7 +39,7 @@ pub fn open(self: *Win32, window: *Window, options: Window.OpenOptions, gpa: std
         null,
         null,
         hinstance,
-        null,
+        window,
     ) orelse {
         reportErr();
         return error.CreateWindowFailed;
@@ -65,9 +64,8 @@ pub fn close(self: *Win32, window: *Window) void {
 }
 
 pub fn poll(self: *Win32, window: *Window) !void {
-    while (true) {
-        var msg: win32.MSG = undefined;
-        if (win32.PeekMessageW(&msg, @ptrCast(self.hwnd), 0, 0, .{ .REMOVE = 1 }) == 0) break;
+    var msg: win32.MSG = undefined;
+    while (win32.PeekMessageW(&msg, @ptrCast(self.hwnd), 0, 0, .{ .REMOVE = 1 }) == win32.TRUE) {
         _ = win32.TranslateMessage(&msg);
         check(win32.DispatchMessageW(&msg)) catch return error.DispatchMessage;
 
@@ -88,18 +86,18 @@ pub fn poll(self: *Win32, window: *Window) !void {
                 window.focused = true;
             },
             win32.WM_USER + win32.WM_KILLFOCUS => window.focused = false,
-            else => return,
+            else => continue,
         }
     }
 }
 
-fn wndProc(hwnd: win32.HWND, msg: u32, wParam: usize, lParam: isize) callconv(.winapi) isize {
+fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {
     return switch (msg) {
         win32.WM_GETMINMAXINFO, win32.WM_SIZE, win32.WM_MOVE, win32.WM_SETFOCUS, win32.WM_KILLFOCUS, win32.WM_CLOSE => |wm| {
-            check(win32.PostMessageW(hwnd, win32.WM_USER + wm, wParam, lParam)) catch {};
+            check(win32.PostMessageW(hwnd, win32.WM_USER + wm, w_param, l_param)) catch {};
             return 0;
         },
-        else => win32.DefWindowProcW(hwnd, msg, wParam, lParam),
+        else => win32.DefWindowProcW(hwnd, msg, w_param, l_param),
     };
 }
 

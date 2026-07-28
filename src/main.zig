@@ -37,8 +37,6 @@ pub fn main(init: std.process.Init) !void {
     var renderer: Renderer = try .init(gpa, &window);
     defer renderer.deinit();
 
-    var frame: usize = 0;
-
     const shaders = try std.Io.Dir.cwd().openDir(io, "../shaders", .{});
     defer shaders.close(io);
 
@@ -49,11 +47,6 @@ pub fn main(init: std.process.Init) !void {
 
     const vertex2_source = try shaders.readFileAlloc(io, "main2.vert.spv", gpa, .unlimited);
     defer gpa.free(vertex2_source);
-
-    std.log.info("vertex bytes: {d}", .{vertex_source.len});
-    std.log.info("vertex words: {d}", .{fragment_source.len});
-    const words = std.mem.bytesAsSlice(u32, vertex_source[0..4]);
-    std.log.info("magic: 0x{x}", .{words[0]});
 
     const vertex: Renderer.ShaderObject = try .init(renderer.gpa, renderer.device, .{
         .stage = .vertex,
@@ -102,8 +95,5 @@ pub fn main(init: std.process.Init) !void {
 
         try renderer.submit(window.size);
         try renderer.resize(window.size);
-
-        std.log.info("({d}) {d}x{d}", .{ frame, window.size.width, window.size.height });
-        frame += 1;
     }
 }

@@ -80,6 +80,35 @@ pub const Position = packed struct(i64) {
     }
 };
 
+pub const Pointer = struct {
+    movement: Movement,
+    buttons: Buttons = .{},
+
+    pub const Movement = union(enum) {
+        position: struct {
+            x: f64,
+            y: f64,
+        },
+        relative: struct {
+            dx: f64,
+            dy: f64,
+        },
+    };
+
+    pub const Buttons = packed struct {
+        left: bool = false,
+        middle: bool = false,
+        right: bool = false,
+
+        back: bool = false,
+        forward: bool = false,
+
+        extra1: bool = false,
+        extra2: bool = false,
+        extra3: bool = false,
+    };
+};
+
 pub const OpenOptions = struct {
     app_id: ?@EnumLiteral() = null, // e.g my_app
     title: [:0]const u8,

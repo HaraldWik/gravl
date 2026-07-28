@@ -48,7 +48,7 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
 
         const queue_family = graphics_queue_family_index orelse continue;
 
-        const score: i32 = switch (properties.device_type) {
+        var score: i32 = switch (properties.device_type) {
             .discrete_gpu => 1000,
             .integrated_gpu => 100,
             .virtual_gpu => 67,
@@ -56,10 +56,10 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
             else => 0,
         };
 
-        const total_score = score + @as(i32, @intCast(properties.limits.max_image_dimension_2d / 1024));
+        score += @as(i32, @intCast(properties.limits.max_image_dimension_2d / 1024));
 
-        if (total_score > best_score) {
-            best_score = total_score;
+        if (score > best_score) {
+            best_score = score;
             best = .{
                 .handle = physical_device,
                 .properties = properties,

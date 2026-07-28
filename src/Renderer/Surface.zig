@@ -54,10 +54,9 @@ fn initWayland(gpa: std.mem.Allocator, instance: Instance, wayland: *Wayland) Wa
 }
 
 fn initX(gpa: std.mem.Allocator, instance: Instance, x: *X) XError!Surface {
-    _ = x;
     const create_info: *const vk.XcbSurfaceCreateInfoKHR = &.{
-        .connection = undefined,
-        .window = 0,
+        .connection = @ptrCast(x.connection),
+        .window = x.handle.id,
     };
 
     const handle = try instance.proxy.createXcbSurfaceKHR(create_info, @ptrCast(@alignCast(gpa.ptr)));
