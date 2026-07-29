@@ -12,12 +12,17 @@ hinstance: std.os.windows.HINSTANCE,
 class: win32.WNDCLASSEXW,
 hwnd: std.os.windows.HWND,
 
+pending_high_surrogate: ?u16 = null,
+
 pub fn open(self: *Win32, window: *Window, options: Window.OpenOptions, gpa: std.mem.Allocator) anyerror!void {
     const hinstance: std.os.windows.HINSTANCE = @ptrCast(win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle);
 
+    const class_name = try std.unicode.utf8ToUtf16LeAllocZ(gpa, options.app_id orelse "Class");
+    defer gpa.free(class_name);
+
     const class = std.mem.zeroInit(win32.WNDCLASSEXW, .{
         .cbSize = @sizeOf(win32.WNDCLASSEXW),
-        .lpszClassName = std.unicode.utf8ToUtf16LeStringLiteral(if (options.app_id) |id| @tagName(id) else "Class"),
+        .lpszClassName = class_name,
         .lpfnWndProc = wndProc,
         .hInstance = hinstance,
         .hCursor = win32.LoadCursorW(null, win32.IDC_ARROW),
@@ -63,14 +68,12 @@ pub fn close(self: *Win32, window: *Window) void {
     _ = win32.UnregisterClassW(self.class.lpszClassName, @ptrCast(self.hinstance));
 }
 
-pub fn poll(self: *Win32, window: *Window) !void {
+pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
+    const pointer = &window.*.pointer;
     var msg: win32.MSG = undefined;
     while (win32.PeekMessageW(&msg, @ptrCast(self.hwnd), 0, 0, .{ .REMOVE = 1 }) == win32.TRUE) {
         _ = win32.TranslateMessage(&msg);
         check(win32.DispatchMessageW(&msg)) catch return error.DispatchMessage;
-
-        std.log.info("msg: {d}", .{msg.message});
-
         switch (msg.message) {
             win32.WM_USER + win32.WM_CLOSE => window.should_close = true,
             win32.WM_USER + win32.WM_SIZE => window.size = .{
@@ -86,9 +89,101 @@ pub fn poll(self: *Win32, window: *Window) !void {
                 window.focused = true;
             },
             win32.WM_USER + win32.WM_KILLFOCUS => window.focused = false,
+
+            win32.WM_MOUSEMOVE => {
+                const x: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @intCast(msg.lParam)))));
+                const y: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @intCast(msg.lParam >> 16)))));
+
+                pointer.movement = .{ .position = .{ .x = x, .y = y } };
+            },
+            win32.WM_RBUTTONDOWN, win32.WM_MBUTTONDOWN, win32.WM_LBUTTONDOWN, win32.WM_XBUTTONDOWN, win32.WM_RBUTTONUP, win32.WM_MBUTTONUP, win32.WM_LBUTTONUP, win32.WM_XBUTTONUP => {
+                const b = &pointer.*.buttons;
+                switch (msg.message) {
+                    win32.WM_RBUTTONDOWN => b.right = true,
+                    win32.WM_MBUTTONDOWN => b.middle = true,
+                    win32.WM_LBUTTONDOWN => b.left = true,
+
+                    win32.WM_RBUTTONUP => b.right = false,
+                    win32.WM_MBUTTONUP => b.middle = false,
+                    win32.WM_LBUTTONUP => b.left = false,
+
+                    win32.WM_XBUTTONDOWN, win32.WM_XBUTTONUP => |x| x: {
+                        const state = x == win32.WM_XBUTTONDOWN;
+                        const x_button: u32 = @intCast(((msg.wParam >> 16) & 0xFFFF));
+                        break :x switch (x_button) {
+                            @bitCast(win32.XBUTTON1) => b.back = state,
+                            @bitCast(win32.XBUTTON2) => b.forward = state,
+                            else => {},
+                        };
+                    },
+                    else => unreachable,
+                }
+            },
+            win32.WM_MOUSEWHEEL, win32.WM_MOUSEHWHEEL => {
+                const delta: isize = @as(i16, @bitCast(@as(u16, @truncate(msg.wParam >> 16)))); // signed high word: up/right > 0, down/left < 0
+                const lines: f64 = @floatFromInt(@divTrunc(delta, @as(isize, @intCast(win32.WHEEL_DELTA))));
+
+                switch (msg.message) {
+                    win32.WM_MOUSEWHEEL => pointer.axis.vertical = lines,
+                    win32.WM_MOUSEHWHEEL => pointer.axis.horizontal = lines,
+                    else => unreachable,
+                }
+            },
+            win32.WM_KEYDOWN, win32.WM_KEYUP => {
+                const KeyLParam = packed struct(u32) {
+                    repeat_count: u16,
+                    scancode: u8,
+                    extended: bool,
+                    reserved: u4,
+                    context: bool,
+                    state: u2,
+                };
+                const info: KeyLParam = @bitCast(@as(u32, @intCast(msg.lParam)));
+
+                var state: Window.Keyboard.Key.State = switch (info.state) {
+                    0b00 => .press,
+                    0b11 => .release,
+                    0b10, 0b01 => .repeat,
+                };
+
+                const key = Window.Keyboard.fromWin32(info.scancode, info.extended) orelse {
+                    std.log.info("skip", .{});
+                    continue;
+                };
+
+                if (state == .press and window.keyboard.get(key) == .press) state = .repeat;
+                window.keyboard.set(key, state);
+            },
+            win32.WM_CHAR => if (options.text) |writer| {
+                const unit: u16 = @truncate(msg.wParam);
+                if (unit >= 0xD800 and unit < 0xDC00) {
+                    self.pending_high_surrogate = unit;
+                    continue;
+                }
+                const codepoint: u21 = if (unit >= 0xDC00 and unit < 0xE000) pair: {
+                    const high = self.pending_high_surrogate orelse continue;
+                    self.pending_high_surrogate = null;
+                    break :pair 0x10000 + (@as(u21, high - 0xD800) << 10) + (unit - 0xDC00);
+                } else unit;
+                self.pending_high_surrogate = null;
+                // backspace, enter, escape and friends are key events, not text
+                if (codepoint < 0x20 or codepoint == 0x7F) continue;
+
+                var buffer: [4]u8 = undefined;
+                const len = std.unicode.utf8Encode(codepoint, &buffer) catch return error.InvalidCodepoint;
+                const bytes = buffer[0..len];
+                try writer.writeAll(bytes);
+            },
             else => continue,
         }
     }
+}
+
+pub fn setTitle(self: *Win32, window: *Window, title: [:0]const u8) !void {
+    _ = window;
+    const title_utf16 = try std.unicode.utf8ToUtf16LeAllocZ(self.gpa, title);
+    defer self.gpa.free(title_utf16);
+    _ = win32.SetWindowTextW(@ptrCast(self.hwnd), @ptrCast(title_utf16));
 }
 
 fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {

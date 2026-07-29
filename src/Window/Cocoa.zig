@@ -7,11 +7,20 @@ pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
     _ = window;
     self.* = .{};
 }
+
 pub fn close(self: *Cocoa, window: *Window) void {
     _ = self;
     _ = window;
 }
-pub fn poll(self: *Cocoa, window: *Window) !void {
+
+pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
     _ = self;
     _ = window;
+    _ = options;
+}
+
+pub fn setTitle(self: *Cocoa, window: *Window, title: [:0]const u8) !void {
+    _ = self;
+    _ = window;
+    _ = title;
 }

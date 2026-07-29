@@ -100,7 +100,6 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
     const debug_messenger: DebugMessenger = try .init(gpa, instance);
     const surface: Surface = try .init(gpa, instance, window);
     const physical_device: PhysicalDevice = try .pick(gpa, instance, surface);
-    std.log.info("poll", .{});
     const device: Device = try .init(gpa, instance, physical_device, device_extensions);
     var swapchain: Swapchain = undefined;
     try swapchain.create(gpa, instance, surface, physical_device, device, window.size);

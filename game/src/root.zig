@@ -6,6 +6,6 @@ comptime {
 }
 
 pub const game_info: gv.Game = .{
-    .id = "my_game",
-    .name = "My Game",
+    .id = "example_game",
+    .name = "Example Game",
 };

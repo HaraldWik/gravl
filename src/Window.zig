@@ -1,6 +1,6 @@
 const Window = @This();
 
-const builtin = @import("builtin");
+const native_os = @import("builtin").os.tag;
 
 const std = @import("std");
 
@@ -10,10 +10,12 @@ should_close: bool = false,
 size: Size,
 position: Position,
 focused: bool = true,
+pointer: Pointer = .{},
+keyboard: Keyboard = .{},
 
 pub const empty: Window = undefined;
 
-pub const Inner = switch (builtin.os.tag) {
+pub const Inner = switch (native_os) {
     .linux, .freebsd, .netbsd, .openbsd => union(LinuxSessionType) {
         wayland: @import("Window/Wayland.zig"),
         x11: @import("Window/X.zig"),
@@ -81,17 +83,18 @@ pub const Position = packed struct(i64) {
 };
 
 pub const Pointer = struct {
-    movement: Movement,
+    movement: Movement = .{ .position = .{} },
     buttons: Buttons = .{},
+    axis: Axis = .{},
 
     pub const Movement = union(enum) {
         position: struct {
-            x: f64,
-            y: f64,
+            x: f64 = 0,
+            y: f64 = 0,
         },
         relative: struct {
-            dx: f64,
-            dy: f64,
+            dx: f64 = 0,
+            dy: f64 = 0,
         },
     };
 
@@ -100,26 +103,32 @@ pub const Pointer = struct {
         middle: bool = false,
         right: bool = false,
 
-        back: bool = false,
         forward: bool = false,
-
+        back: bool = false,
         extra1: bool = false,
         extra2: bool = false,
         extra3: bool = false,
     };
+
+    pub const Axis = struct {
+        horizontal: f64 = 0,
+        vertical: f64 = 0,
+    };
 };
 
+pub const Keyboard = @import("Window/Keyboard.zig");
+
 pub const OpenOptions = struct {
-    app_id: ?@EnumLiteral() = null, // e.g my_app
+    app_id: ?[:0]const u8 = null, // e.g "my_app"
     title: [:0]const u8,
     size: Size,
     position: ?Position = null,
 };
 
-pub fn open(self: *Window, init: std.process.Init, options: OpenOptions) !void {
-    self.inner = switch (builtin.os.tag) {
-        .linux => blk: {
-            const session_type = LinuxSessionType.detect(init.minimal) orelse .x11;
+pub fn open(self: *Window, gpa: std.mem.Allocator, init: std.process.Init.Minimal, options: OpenOptions) !void {
+    self.inner = switch (native_os) {
+        .linux, .freebsd, .netbsd, .openbsd => blk: {
+            const session_type = LinuxSessionType.detect(init) orelse .x11;
             switch (session_type) {
                 inline else => |inline_session_type| break :blk @unionInit(Inner, @tagName(inline_session_type), undefined),
             }
@@ -133,7 +142,7 @@ pub fn open(self: *Window, init: std.process.Init, options: OpenOptions) !void {
         .position = options.position orelse .{ .x = 0, .y = 0 },
     };
 
-    try self.call(.open, if (builtin.os.tag == .windows) .{ options, init.gpa } else .{options});
+    try self.call(.open, if (native_os == .windows) .{ options, gpa } else .{options});
 }
 
 pub fn close(self: *Window) void {
@@ -141,11 +150,35 @@ pub fn close(self: *Window) void {
     self.* = undefined;
 }
 
-pub fn poll(self: *Window) !void {
-    try call(self, .poll, .{});
+pub const PollOptions = struct {
+    text: ?*std.Io.Writer = null,
+};
+
+pub fn poll(self: *Window, options: PollOptions) !void {
+    if (!self.focused) {
+        self.pointer.buttons = .{};
+        self.keyboard = .{};
+    }
+
+    if (self.pointer.movement == .relative) self.pointer.movement = .{ .relative = .{} };
+    self.pointer.axis = .{};
+
+    try self.call(.poll, .{options});
+
+    var kb_it = self.keyboard.iterator();
+    while (kb_it.next()) |entry| {
+        const key, const state = entry;
+
+        if (state == .press) self.keyboard.set(key, .repeat);
+    }
 }
+
+pub fn setTitle(self: *Window, title: [:0]const u8) !void {
+    try self.call(.setTitle, .{title});
+}
+
 fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {
-    switch (builtin.os.tag) {
+    switch (native_os) {
         .linux, .freebsd, .netbsd, .openbsd => switch (self.inner) {
             inline else => |*inner| {
                 const function = @field(@TypeOf(inner.*), @tagName(function_name));

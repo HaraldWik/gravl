@@ -9,17 +9,23 @@ const wp = @import("wayland").client.wp;
 const xdg = @import("wayland").client.xdg;
 const zxdg = @import("wayland").client.zxdg;
 
+window: *Window,
+
 display: *wl.Display,
 
 surface: *wl.Surface,
 xdg_surface: *xdg.Surface,
 toplevel: *xdg.Toplevel,
 
+frame_callback: ?*wl.Callback = null,
+
 pointer: ?*wl.Pointer = null,
 keyboard: ?*wl.Keyboard = null,
 
 pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void {
     try Loader.load();
+
+    self.window = window;
 
     const display = try wl.Display.connect(null);
 
@@ -46,11 +52,11 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     var configured: bool = false;
     surface.setListener(*Window, surfaceListener, window);
     xdg_surface.setListener(*bool, xdgSurfaceListener, &configured);
-    toplevel.setListener(*Window, xdgToplevelListener, window);
+    toplevel.setListener(*Wayland, xdgToplevelListener, self);
 
     xdg_surface.setWindowGeometry(0, 0, @intCast(options.size.width), @intCast(options.size.height));
 
-    if (options.app_id) |app_id| toplevel.setAppId(@tagName(app_id));
+    if (options.app_id) |app_id| toplevel.setAppId(app_id.ptr);
     toplevel.setTitle(options.title.ptr);
 
     surface.commit();
@@ -58,6 +64,7 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     surface.commit();
 
     self.* = .{
+        .window = window,
         .display = display,
         .surface = surface,
         .xdg_surface = xdg_surface,
@@ -79,35 +86,39 @@ pub fn close(self: *Wayland, window: *Window) void {
     Loader.unload();
 }
 
-pub fn poll(self: *Wayland, window: *Window) !void {
+pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void {
     const display = self.display;
+    _ = options;
 
     if (window.should_close) return;
 
-    if (display.prepareRead()) {
-        while (true) {
-            switch (display.flush()) {
-                .SUCCESS => break,
-                .AGAIN, .INTR => continue,
-                .PIPE => return error.CompositorDisconnected,
-                else => return error.Flush,
-            }
-        }
+    while (display.prepareRead() == false) {
+        if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
+    }
 
-        var pfd: std.posix.pollfd = .{
-            .fd = @intCast(display.getFd()),
-            .events = std.posix.POLL.IN,
-            .revents = 0,
-        };
+    switch (display.flush()) {
+        .SUCCESS, .AGAIN, .INTR => {},
+        .PIPE => return error.CompositorDisconnected,
+        else => return error.Flush,
+    }
 
-        if (std.posix.poll(@ptrCast(&pfd), 1) catch 0 > 0) {
-            if (display.readEvents() != .SUCCESS) return error.ReadEvents;
-        } else {
-            display.cancelRead();
-        }
+    var pfd: std.posix.pollfd = .{
+        .fd = @intCast(display.getFd()),
+        .events = std.posix.POLL.IN,
+        .revents = 0,
+    };
+
+    if (std.posix.poll(@ptrCast(&pfd), 1) catch 0 > 0) {
+        if (display.readEvents() != .SUCCESS) return error.ReadEvents;
+    } else {
+        display.cancelRead();
     }
 
     if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
+}
+pub fn setTitle(self: *Wayland, window: *Window, title: [:0]const u8) !void {
+    _ = window;
+    self.toplevel.setTitle(title);
 }
 
 const RegistryData = struct {
@@ -148,7 +159,8 @@ fn xdgSurfaceListener(xdg_surface: *xdg.Surface, event: xdg.Surface.Event, confi
     }
 }
 
-fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, window: *Window) void {
+fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, self: *Wayland) void {
+    const window = self.window;
     switch (event) {
         .configure => |configure| {
             for (configure.states.slice(xdg.Toplevel.State)) |state| switch (state) {
@@ -190,14 +202,43 @@ fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, self: *Wayland) void {
 }
 
 fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland) void {
-    _ = event;
-    _ = self;
+    const window = self.window;
+    switch (event) {
+        .enter => {},
+        .leave => {},
+        .motion => |motion| {
+            window.pointer.movement = .{ .position = .{
+                .x = motion.surface_x.toDouble(),
+                .y = motion.surface_y.toDouble(),
+            } };
+        },
+        .button => |button| {
+            const buttons = &window.*.pointer.buttons;
+            const state = button.state == .pressed;
+            switch (button.button) {
+                0x110 => buttons.left = state,
+                0x112 => buttons.middle = state,
+                0x111 => buttons.right = state,
+                0x113 => buttons.back = state,
+                0x114 => buttons.forward = state,
+                0x115 => buttons.extra1 = state,
+                0x116 => buttons.extra2 = state,
+                else => {},
+            }
+        },
+        .axis => |axis| {
+            switch (axis.axis) {
+                .vertical_scroll => window.pointer.axis.vertical = -axis.value.toDouble() / 10.0,
+                .horizontal_scroll => window.pointer.axis.horizontal = axis.value.toDouble() / 10.0,
+                _ => unreachable,
+            }
+        },
+    }
 }
 
 fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, self: *Wayland) void {
     _ = self;
-
-    std.log.info("keyboard: {t}", .{event});
+    _ = event;
 }
 
 var loader: Loader = .{};

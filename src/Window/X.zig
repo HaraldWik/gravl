@@ -24,10 +24,10 @@ pub fn open(self: *X, window: *Window, options: Window.OpenOptions) !void {
         0,
         window_handle,
         screen.root,
-        if (options.position) |position| @intCast(position.x) else 0,
-        if (options.position) |position| @intCast(position.y) else 0,
-        options.size.width,
-        options.size.height,
+        if (options.position) |position| @truncate(position.x) else 0,
+        if (options.position) |position| @truncate(position.y) else 0,
+        @truncate(options.size.width),
+        @truncate(options.size.height),
         1,
         xcb.window_class.copy_from_parent,
         screen.root_visual,
@@ -39,12 +39,15 @@ pub fn open(self: *X, window: *Window, options: Window.OpenOptions) !void {
 
     self.* = .{ .connection = connection, .handle = window_handle };
 }
+
 pub fn close(self: *X, window: *Window) void {
     _ = window;
     xcb.destroyWindow(self.connection, self.handle);
     xcb.disconnect(self.connection);
 }
-pub fn poll(self: *X, window: *Window) !void {
+
+pub fn poll(self: *X, window: *Window, options: Window.PollOptions) !void {
+    _ = options;
     while (xcb.pollForEvent(self.connection)) |event| {
         // defer xcb.freeEvent(event);
         switch (event.response_type & 0x7f) {
@@ -78,4 +81,10 @@ pub fn poll(self: *X, window: *Window) !void {
             else => {},
         }
     }
+}
+
+pub fn setTitle(self: *X, window: *Window, title: [:0]const u8) !void {
+    _ = self;
+    _ = window;
+    _ = title;
 }

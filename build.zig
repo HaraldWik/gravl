@@ -70,7 +70,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.root_module.linkSystemLibrary("xcb", .{});
+    if (target.result.os.tag != .windows) exe.root_module.linkSystemLibrary("xcb", .{});
 
     b.installArtifact(exe);
 
