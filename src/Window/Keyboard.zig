@@ -3,9 +3,10 @@ const Keyboard = @This();
 const std = @import("std");
 const win32 = @import("win32").everything;
 
-mask: MaskInt = 0,
+states: StatesInt = 0,
+down: std.bit_set.IntegerBitSet(Key.count) = .empty,
 
-pub const MaskInt = std.meta.Int(.unsigned, Key.count * @bitSizeOf(Key.State));
+pub const StatesInt = std.meta.Int(.unsigned, Key.count * @bitSizeOf(Key.State));
 
 pub const Key = enum(u8) {
     // Letters
@@ -130,14 +131,29 @@ pub const Key = enum(u8) {
     pub const count = @typeInfo(Key).@"enum".fields.len;
 
     pub const State = enum(u2) {
+        none = 0,
         press = 1,
-        release = 0,
-        repeat = 2,
+        release = 2,
+        repeat = 3,
+
+        const next_down_state: std.EnumMap(Key.State, Key.State) = .init(.{
+            .none = .press,
+            .press = .repeat,
+            .release = .press,
+            .repeat = .repeat,
+        });
+
+        const next_up_state: std.EnumMap(Key.State, Key.State) = .init(.{
+            .none = .none,
+            .press = .release,
+            .release = .none,
+            .repeat = .release,
+        });
 
         pub fn isDown(self: State) bool {
             return switch (self) {
                 .press, .repeat => true,
-                .release => false,
+                .none, .release => false,
             };
         }
 
@@ -160,63 +176,56 @@ pub const Iterator = struct {
     }
 };
 
-pub fn indexOf(key: Key) std.meta.Tag(Key) {
+fn indexOfState(key: Key) std.meta.Tag(Key) {
     return @intFromEnum(key) * @bitSizeOf(Key.State);
 }
 
 pub fn set(self: *Keyboard, key: Key, state: Key.State) void {
-    const shift = indexOf(key);
-    const mask = @as(MaskInt, (1 << @bitSizeOf(Key.State)) - 1) << shift;
+    const shift = indexOfState(key);
+    const mask = @as(StatesInt, (1 << @bitSizeOf(Key.State)) - 1) << shift;
 
-    self.mask = (self.mask & ~mask) | (@as(MaskInt, @intFromEnum(state)) << shift);
+    self.states = (self.states & ~mask) | (@as(StatesInt, @intFromEnum(state)) << shift);
 }
 
 pub fn get(self: Keyboard, key: Key) Key.State {
-    const shift = indexOf(key);
-    const mask = @as(MaskInt, (1 << @bitSizeOf(Key.State)) - 1);
+    const shift = indexOfState(key);
+    const mask = @as(StatesInt, (1 << @bitSizeOf(Key.State)) - 1);
 
-    return @enumFromInt((self.mask >> shift) & mask);
+    return @enumFromInt((self.states >> shift) & mask);
+}
+
+pub fn press(self: *Keyboard, key: Key) void {
+    self.down.set(@intFromEnum(key));
+}
+
+pub fn release(self: *Keyboard, key: Key) void {
+    self.down.unset(@intFromEnum(key));
+}
+
+pub fn progress(self: *Keyboard) void {
+    for (0..Key.count) |i| {
+        const key: Key = @enumFromInt(i);
+        const down = self.down.isSet(@intFromEnum(key));
+        const current_state = self.get(key);
+
+        const next_state = if (down)
+            Key.State.next_down_state.getAssertContains(current_state)
+        else
+            Key.State.next_up_state.getAssertContains(current_state);
+
+        self.set(key, next_state);
+    }
 }
 
 pub fn iterator(self: Keyboard) Iterator {
     return .{ .keyboard = &self };
 }
 
-pub fn fromWin32(scancode: u8, extended: bool) ?Key {
-    switch (scancode) {
-        0x2A => return .left_shift,
-        0x36 => return .right_shift,
+pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {
+    const scancode: u32 = (@as(u32, @intCast(lParam)) >> 16) & 0xFF;
+    const extended: bool = ((lParam >> 24) & 1) != 0;
 
-        0x1D => return if (extended) .right_control else .left_control,
-
-        0x38 => return if (extended) .right_alt else .left_alt,
-
-        0x5B => return .left_super,
-        0x5C => return .right_super,
-
-        // 0x37 => if (extended) return .print_screen,
-
-        // 0x45 => return .pause,
-
-        0x52 => if (extended) return .insert,
-        0x53 => if (extended) return .delete,
-        0x47 => if (extended) return .home,
-        0x4F => if (extended) return .end,
-        0x49 => if (extended) return .page_up,
-        0x51 => if (extended) return .page_down,
-
-        0x48 => if (extended) return .up,
-        0x50 => if (extended) return .down,
-        0x4B => if (extended) return .left,
-        0x4D => if (extended) return .right,
-
-        0x1C => return if (extended) .keypad_enter else .enter,
-        0x35 => return if (extended) .keypad_divide else .slash,
-
-        else => {},
-    }
-
-    const key: win32.VIRTUAL_KEY = @enumFromInt(win32.MapVirtualKeyW(scancode, win32.MAPVK_VSC_TO_VK_EX));
+    const key: win32.VIRTUAL_KEY = @enumFromInt(@as(u16, @truncate(wParam)));
 
     return switch (key) {
         // Letters
@@ -274,10 +283,10 @@ pub fn fromWin32(scancode: u8, extended: bool) ?Key {
         .F12 => .f12,
 
         // Modifiers
-        .SHIFT => switch (key) {
+        .SHIFT => switch (std.enums.fromInt(win32.VIRTUAL_KEY, win32.MapVirtualKeyW(scancode, win32.MAPVK_VSC_TO_VK_EX)) orelse .LSHIFT) {
             .LSHIFT => .left_shift,
             .RSHIFT => .right_shift,
-            else => .left_shift,
+            else => .left_shift, // fallback
         },
         .CONTROL => if (extended) .right_control else .left_control,
         .MENU => if (extended) .right_alt else .left_alt,

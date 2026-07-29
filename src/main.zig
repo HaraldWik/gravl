@@ -105,19 +105,18 @@ pub fn main(init: std.process.Init) !void {
         try renderer.submit(window.size);
         try renderer.resize(window.size);
 
-        // for (0..Window.Keyboard.Key.count) |i| {
-        //     const key: Window.Keyboard.Key = @enumFromInt(i);
-        //     const state = window.keyboard.get(key);
-        //     switch (state) {
-        //         .press, .repeat => std.debug.print("{t}: {t}\n", .{ state, key }),
-        //         .release => {},
-        //     }
-        // }
-        if (window.keyboard.get(.enter) == .press) std.debug.print("\n", .{});
-        if (writer.buffered().len > 0) {
-            std.debug.print("{s}", .{writer.buffered()});
-            _ = writer.consumeAll();
+        for (0..Window.Keyboard.Key.count) |i| {
+            const key: Window.Keyboard.Key = @enumFromInt(i);
+            const state = window.keyboard.get(key);
+            switch (state) {
+                .none => {},
+                .press, .release, .repeat => std.debug.print("{t}: {t}\n", .{ state, key }),
+            }
         }
+        // if (writer.buffered().len > 0) {
+        // std.debug.print("{s}", .{writer.buffered()});
+        _ = writer.consumeAll();
+        // }
 
         if (window.keyboard.get(.b).isDown()) std.log.info("fps: {d}", .{fps});
         if (window.pointer.buttons.middle) std.log.info("middle", .{});

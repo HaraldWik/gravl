@@ -164,13 +164,7 @@ pub fn poll(self: *Window, options: PollOptions) !void {
     self.pointer.axis = .{};
 
     try self.call(.poll, .{options});
-
-    var kb_it = self.keyboard.iterator();
-    while (kb_it.next()) |entry| {
-        const key, const state = entry;
-
-        if (state == .press) self.keyboard.set(key, .repeat);
-    }
+    self.keyboard.progress();
 }
 
 pub fn setTitle(self: *Window, title: [:0]const u8) !void {

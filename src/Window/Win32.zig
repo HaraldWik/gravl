@@ -74,6 +74,7 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
     while (win32.PeekMessageW(&msg, @ptrCast(self.hwnd), 0, 0, .{ .REMOVE = 1 }) == win32.TRUE) {
         _ = win32.TranslateMessage(&msg);
         check(win32.DispatchMessageW(&msg)) catch return error.DispatchMessage;
+
         switch (msg.message) {
             win32.WM_USER + win32.WM_CLOSE => window.should_close = true,
             win32.WM_USER + win32.WM_SIZE => window.size = .{
@@ -130,29 +131,13 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 }
             },
             win32.WM_KEYDOWN, win32.WM_KEYUP => {
-                const KeyLParam = packed struct(u32) {
-                    repeat_count: u16,
-                    scancode: u8,
-                    extended: bool,
-                    reserved: u4,
-                    context: bool,
-                    state: u2,
-                };
-                const info: KeyLParam = @bitCast(@as(u32, @intCast(msg.lParam)));
+                const key = Window.Keyboard.fromWin32(msg.wParam, msg.lParam) orelse continue;
 
-                var state: Window.Keyboard.Key.State = switch (info.state) {
-                    0b00 => .press,
-                    0b11 => .release,
-                    0b10, 0b01 => .repeat,
-                };
-
-                const key = Window.Keyboard.fromWin32(info.scancode, info.extended) orelse {
-                    std.log.info("skip", .{});
-                    continue;
-                };
-
-                if (state == .press and window.keyboard.get(key) == .press) state = .repeat;
-                window.keyboard.set(key, state);
+                switch (msg.message) {
+                    win32.WM_KEYDOWN => window.keyboard.press(key),
+                    win32.WM_KEYUP => window.keyboard.release(key),
+                    else => unreachable,
+                }
             },
             win32.WM_CHAR => if (options.text) |writer| {
                 const unit: u16 = @truncate(msg.wParam);

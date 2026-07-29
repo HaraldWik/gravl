@@ -237,8 +237,32 @@ fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland) void
 }
 
 fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, self: *Wayland) void {
-    _ = self;
-    _ = event;
+    const window = self.window;
+    const keyboard = &self.*.window.keyboard;
+
+    switch (event) {
+        .keymap => {},
+        .enter => |enter| {
+            window.focused = true;
+            for (enter.keys.slice(u32)) |key| {
+                std.log.info("key: {d}", .{key});
+            }
+        },
+        .leave => window.focused = false,
+        .key => |key| {
+            const scancode = key.key + 30;
+
+            const k: Window.Keyboard.Key = @enumFromInt((scancode) % Window.Keyboard.Key.count);
+
+            switch (key.state) {
+                .pressed => keyboard.press(k),
+                .released => keyboard.release(k),
+                _ => unreachable,
+            }
+        },
+        .modifiers => {},
+        .repeat_info => {},
+    }
 }
 
 var loader: Loader = .{};
