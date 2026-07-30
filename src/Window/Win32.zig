@@ -14,7 +14,7 @@ hwnd: std.os.windows.HWND,
 
 pending_high_surrogate: ?u16 = null,
 
-pub fn open(self: *Win32, window: *Window, options: Window.OpenOptions, gpa: std.mem.Allocator) anyerror!void {
+pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Window.OpenOptions) anyerror!void {
     const hinstance: std.os.windows.HINSTANCE = @ptrCast(win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle);
 
     const class_name = try std.unicode.utf8ToUtf16LeAllocZ(gpa, options.app_id orelse "Class");

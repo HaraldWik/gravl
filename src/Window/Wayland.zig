@@ -34,16 +34,16 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
 
     var registry_data: RegistryData = .{};
     registry.setListener(*RegistryData, RegistryData.listener, &registry_data);
-    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+    if (display.roundtrip() != .SUCCESS) return error.Roundtrip;
 
     const compositor = registry_data.compositor.?;
     const xdg_wm_base = registry_data.xdg_wm_base.?;
     const seat = registry_data.seat.?;
 
+    xdg_wm_base.setListener(?*anyopaque, xdgWmBaseListener, null);
     seat.setListener(*Wayland, seatListener, self);
 
-    if (display.flush() != .SUCCESS) return error.Flush;
-    if (display.dispatch() != .SUCCESS) return error.Dispatch;
+    if (display.roundtrip() != .SUCCESS) return error.Roundtrip;
 
     const surface = try compositor.createSurface();
     const xdg_surface = try xdg_wm_base.getXdgSurface(surface);
@@ -54,14 +54,11 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     xdg_surface.setListener(*bool, xdgSurfaceListener, &configured);
     toplevel.setListener(*Wayland, xdgToplevelListener, self);
 
-    xdg_surface.setWindowGeometry(0, 0, @intCast(options.size.width), @intCast(options.size.height));
-
     if (options.app_id) |app_id| toplevel.setAppId(app_id.ptr);
     toplevel.setTitle(options.title.ptr);
 
     surface.commit();
     while (!configured) if (display.dispatch() != .SUCCESS) return error.Dispatch;
-    surface.commit();
 
     self.* = .{
         .window = window,
@@ -116,6 +113,7 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
 
     if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
 }
+
 pub fn setTitle(self: *Wayland, window: *Window, title: [:0]const u8) !void {
     _ = window;
     self.toplevel.setTitle(title);
@@ -142,41 +140,8 @@ const RegistryData = struct {
     }
 };
 
-fn surfaceListener(_: *wl.Surface, event: wl.Surface.Event, window: *Window) void {
-    _ = window;
-    switch (event) {
-        .enter => {},
-        .leave => {},
-    }
-}
-
-fn xdgSurfaceListener(xdg_surface: *xdg.Surface, event: xdg.Surface.Event, configured: *bool) void {
-    switch (event) {
-        .configure => |configure| {
-            xdg_surface.ackConfigure(configure.serial);
-            configured.* = true;
-        },
-    }
-}
-
-fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, self: *Wayland) void {
-    const window = self.window;
-    switch (event) {
-        .configure => |configure| {
-            for (configure.states.slice(xdg.Toplevel.State)) |state| switch (state) {
-                .maximized => {},
-                .fullscreen => {},
-                .resizing => window.size = .{ .width = @intCast(configure.width), .height = @intCast(configure.height) },
-                .activated => window.focused = true,
-                .tiled_left => {},
-                .tiled_right => {},
-                .tiled_top => {},
-                .tiled_bottom => {},
-                _ => {},
-            };
-        },
-        .close => window.should_close = true,
-    }
+fn xdgWmBaseListener(xdg_wm_base: *xdg.WmBase, event: xdg.WmBase.Event, _: ?*anyopaque) void {
+    xdg_wm_base.pong(event.ping.serial);
 }
 
 fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, self: *Wayland) void {
@@ -262,6 +227,48 @@ fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, self: *Wayland) v
         },
         .modifiers => {},
         .repeat_info => {},
+    }
+}
+
+fn surfaceListener(_: *wl.Surface, event: wl.Surface.Event, window: *Window) void {
+    _ = window;
+    switch (event) {
+        .enter => {},
+        .leave => {},
+    }
+}
+
+fn xdgSurfaceListener(xdg_surface: *xdg.Surface, event: xdg.Surface.Event, configured: *bool) void {
+    switch (event) {
+        .configure => |configure| {
+            xdg_surface.ackConfigure(configure.serial);
+            configured.* = true;
+        },
+    }
+}
+
+fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, self: *Wayland) void {
+    const window = self.window;
+
+    switch (event) {
+        .configure => |configure| {
+            for (configure.states.slice(xdg.Toplevel.State)) |state| {
+                switch (state) {
+                    .activated => window.focused = true,
+                    else => {},
+                }
+            }
+
+            if (configure.width + configure.height == 0) return;
+
+            const size: Window.Size = .{
+                .width = @intCast(configure.width),
+                .height = @intCast(configure.height),
+            };
+
+            window.size = size;
+        },
+        .close => window.should_close = true,
     }
 }
 

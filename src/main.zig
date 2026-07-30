@@ -24,7 +24,7 @@ pub fn main(init: std.process.Init) !void {
     std.log.info("{s} ({f})", .{ game.name, game.version });
 
     var window: Window = undefined;
-    try window.open(init.gpa, init.minimal, .{
+    try window.open(gpa, init.minimal, .{
         .app_id = game.id,
         .title = game.name,
         .size = .{
@@ -37,7 +37,23 @@ pub fn main(init: std.process.Init) !void {
     var renderer: Renderer = try .init(gpa, &window);
     defer renderer.deinit();
 
-    const shaders = try std.Io.Dir.cwd().openDir(io, "../shaders", .{});
+    const asset_paths: []const [:0]const u8 = &.{
+        "assets",
+        "../assets",
+        "../../assets",
+    };
+
+    const assets_path: [:0]const u8 = path: for (asset_paths) |path| {
+        std.Io.Dir.cwd().access(io, path, .{}) catch |err| switch (err) {
+            error.FileNotFound => continue,
+            else => return err,
+        };
+        break :path path;
+    } else return error.NoAssetDir;
+
+    const dir = try std.Io.Dir.cwd().openDir(io, assets_path, .{ .iterate = true });
+
+    const shaders = try dir.openDir(io, "shaders", .{});
     defer shaders.close(io);
 
     const vertex_source = try shaders.readFileAlloc(io, "main.vert.spv", gpa, .unlimited);

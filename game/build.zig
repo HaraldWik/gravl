@@ -33,4 +33,14 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     run_cmd.addArtifactArg(game);
     if (b.args) |args| run_cmd.addArgs(args);
+
+    const package_step = b.step("package", "Package everything into a folder");
+    package_step.dependOn(b.getInstallStep());
+
+    const package_gravl_exe = b.addInstallArtifact(gravl_exe, .{ .dest_dir = .{ .override = .{ .custom = "pkg/bin" } } });
+    package_step.dependOn(&package_gravl_exe.step);
+    const package_game = b.addInstallArtifact(game, .{ .dest_dir = .{ .override = .{ .custom = "pkg/bin" } } });
+    package_step.dependOn(&package_game.step);
+    const package_assets = b.addInstallDirectory(.{ .source_dir = b.path("../assets/"), .install_dir = .{ .custom = "pkg" }, .install_subdir = "assets" });
+    package_step.dependOn(&package_assets.step);
 }

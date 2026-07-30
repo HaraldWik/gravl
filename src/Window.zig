@@ -16,7 +16,7 @@ keyboard: Keyboard = .{},
 pub const empty: Window = undefined;
 
 pub const Inner = switch (native_os) {
-    .linux, .freebsd, .netbsd, .openbsd => union(LinuxSessionType) {
+    .linux, .freebsd, .netbsd, .openbsd => union(XdgSessionType) {
         wayland: @import("Window/Wayland.zig"),
         x11: @import("Window/X.zig"),
     },
@@ -30,7 +30,7 @@ pub const Inner = switch (native_os) {
     },
 };
 
-const LinuxSessionType = enum(u2) {
+const XdgSessionType = enum(u1) {
     wayland,
     x11,
 
@@ -62,8 +62,14 @@ pub const Size = packed struct(u64) {
         return @as(f32, @floatFromInt(self.width)) / @as(f32, @floatFromInt(self.height));
     }
 
-    /// Coercible into @Vector(2, u32) or [2]u32
-    pub fn toTuple(self: Size) struct { u32, u32 } {
+    /// Returns the size components as a tuple.
+    /// Can be coerced into @Vector(2, i32) or [2]i32.
+    ///
+    /// Example:
+    /// ```zig
+    /// const x, const y = size.xy();
+    /// ```
+    pub fn xy(self: Size) struct { u32, u32 } {
         return .{ self.width, self.height };
     }
 };
@@ -76,8 +82,14 @@ pub const Position = packed struct(i64) {
         return a.x == b.x and a.y == b.y;
     }
 
-    /// Coercible into @Vector(2, i32) or [2]i32
-    pub fn toTuple(self: Position) struct { i32, i32 } {
+    /// Returns the position components as a tuple.
+    /// Can be coerced into @Vector(2, i32) or [2]i32.
+    ///
+    /// Example:
+    /// ```zig
+    /// const x, const y = position.xy();
+    /// ```
+    pub fn xy(self: Position) struct { i32, i32 } {
         return .{ self.x, self.y };
     }
 };
@@ -110,6 +122,7 @@ pub const Pointer = struct {
         extra3: bool = false,
     };
 
+    /// Horizontal and vertical scroll
     pub const Axis = struct {
         horizontal: f64 = 0,
         vertical: f64 = 0,
@@ -125,10 +138,10 @@ pub const OpenOptions = struct {
     position: ?Position = null,
 };
 
-pub fn open(self: *Window, gpa: std.mem.Allocator, init: std.process.Init.Minimal, options: OpenOptions) !void {
+pub fn open(self: *Window, gpa: std.mem.Allocator, minimal: std.process.Init.Minimal, options: OpenOptions) !void {
     self.inner = switch (native_os) {
         .linux, .freebsd, .netbsd, .openbsd => blk: {
-            const session_type = LinuxSessionType.detect(init) orelse .x11;
+            const session_type = XdgSessionType.detect(minimal) orelse .x11;
             switch (session_type) {
                 inline else => |inline_session_type| break :blk @unionInit(Inner, @tagName(inline_session_type), undefined),
             }
@@ -142,7 +155,7 @@ pub fn open(self: *Window, gpa: std.mem.Allocator, init: std.process.Init.Minima
         .position = options.position orelse .{ .x = 0, .y = 0 },
     };
 
-    try self.call(.open, if (native_os == .windows) .{ options, gpa } else .{options});
+    try self.call(.open, if (native_os == .windows) .{ gpa, options } else .{options});
 }
 
 pub fn close(self: *Window) void {
@@ -150,10 +163,15 @@ pub fn close(self: *Window) void {
     self.* = undefined;
 }
 
+/// Allows optional outputs, such as receiving text input events.
 pub const PollOptions = struct {
+    /// Optional writer to receive text input events.
+    /// Characters are encoded as UTF-8.
     text: ?*std.Io.Writer = null,
 };
 
+/// Processes pending window events and updates the window state for the current frame.
+/// Should be called once per frame.
 pub fn poll(self: *Window, options: PollOptions) !void {
     if (!self.focused) {
         self.pointer.buttons = .{};
@@ -180,8 +198,9 @@ fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {
             },
         },
         else => {
+            const inner = &self.*.inner;
             const function = @field(@TypeOf(self.inner), @tagName(function_name));
-            return @call(.always_inline, function, .{ &self.inner, self } ++ args);
+            return @call(.always_inline, function, .{ inner, self } ++ args);
         },
     }
 }
