@@ -163,8 +163,8 @@ pub fn poll(self: *Window, options: PollOptions) !void {
     if (self.pointer.movement == .relative) self.pointer.movement = .{ .relative = .{} };
     self.pointer.axis = .{};
 
-    try self.call(.poll, .{options});
     self.keyboard.progress();
+    try self.call(.poll, .{options});
 }
 
 pub fn setTitle(self: *Window, title: [:0]const u8) !void {

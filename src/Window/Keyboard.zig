@@ -3,10 +3,10 @@ const Keyboard = @This();
 const std = @import("std");
 const win32 = @import("win32").everything;
 
-states: StatesInt = 0,
-down: std.bit_set.IntegerBitSet(Key.count) = .empty,
+previous: BitSet = .empty,
+current: BitSet = .empty,
 
-pub const StatesInt = std.meta.Int(.unsigned, Key.count * @bitSizeOf(Key.State));
+pub const BitSet = std.bit_set.IntegerBitSet(Key.count);
 
 pub const Key = enum(u8) {
     // Letters
@@ -136,20 +136,8 @@ pub const Key = enum(u8) {
         release = 2,
         repeat = 3,
 
-        const next_down_state: std.EnumMap(Key.State, Key.State) = .init(.{
-            .none = .press,
-            .press = .repeat,
-            .release = .press,
-            .repeat = .repeat,
-        });
-
-        const next_up_state: std.EnumMap(Key.State, Key.State) = .init(.{
-            .none = .none,
-            .press = .release,
-            .release = .none,
-            .repeat = .release,
-        });
-
+        /// Prefer using `Keyboard.isDown` when a `Keyboard` instance is available,
+        /// as it provides the current state directly.
         pub fn isDown(self: State) bool {
             return switch (self) {
                 .press, .repeat => true,
@@ -157,68 +145,40 @@ pub const Key = enum(u8) {
             };
         }
 
+        /// Prefer using `Keyboard.isUp` when a `Keyboard` instance is available,
+        /// as it provides the current state directly.
         pub fn isUp(self: State) bool {
             return !self.isDown();
         }
     };
 };
 
-pub const Iterator = struct {
-    keyboard: *const Keyboard,
-    index: std.meta.Tag(Key) = 0,
-
-    pub fn next(self: *Iterator) ?struct { Key, Key.State } {
-        if (self.index >= Key.count) return null;
-        const key: Key = @enumFromInt(self.index);
-        const state = self.keyboard.get(key);
-        self.index += 1;
-        return .{ key, state };
-    }
-};
-
-fn indexOfState(key: Key) std.meta.Tag(Key) {
-    return @intFromEnum(key) * @bitSizeOf(Key.State);
-}
-
-pub fn set(self: *Keyboard, key: Key, state: Key.State) void {
-    const shift = indexOfState(key);
-    const mask = @as(StatesInt, (1 << @bitSizeOf(Key.State)) - 1) << shift;
-
-    self.states = (self.states & ~mask) | (@as(StatesInt, @intFromEnum(state)) << shift);
-}
-
 pub fn get(self: Keyboard, key: Key) Key.State {
-    const shift = indexOfState(key);
-    const mask = @as(StatesInt, (1 << @bitSizeOf(Key.State)) - 1);
+    const down = self.current.isSet(@intFromEnum(key));
+    const prev_down = self.previous.isSet(@intFromEnum(key));
 
-    return @enumFromInt((self.states >> shift) & mask);
+    return if (down) if (prev_down) .repeat else .press else if (prev_down) .release else .none;
+}
+
+pub fn isDown(self: Keyboard, key: Key) bool {
+    const down = self.current.isSet(@intFromEnum(key));
+    return down;
+}
+
+pub fn isUp(self: Keyboard, key: Key) bool {
+    return !self.isDown(key);
 }
 
 pub fn press(self: *Keyboard, key: Key) void {
-    self.down.set(@intFromEnum(key));
+    self.current.set(@intFromEnum(key));
 }
 
 pub fn release(self: *Keyboard, key: Key) void {
-    self.down.unset(@intFromEnum(key));
+    self.current.unset(@intFromEnum(key));
 }
 
 pub fn progress(self: *Keyboard) void {
-    for (0..Key.count) |i| {
-        const key: Key = @enumFromInt(i);
-        const down = self.down.isSet(@intFromEnum(key));
-        const current_state = self.get(key);
-
-        const next_state = if (down)
-            Key.State.next_down_state.getAssertContains(current_state)
-        else
-            Key.State.next_up_state.getAssertContains(current_state);
-
-        self.set(key, next_state);
-    }
-}
-
-pub fn iterator(self: Keyboard) Iterator {
-    return .{ .keyboard = &self };
+    self.previous = self.current;
 }
 
 pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {

@@ -155,9 +155,8 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 if (codepoint < 0x20 or codepoint == 0x7F) continue;
 
                 var buffer: [4]u8 = undefined;
-                const len = std.unicode.utf8Encode(codepoint, &buffer) catch return error.InvalidCodepoint;
-                const bytes = buffer[0..len];
-                try writer.writeAll(bytes);
+                const decoded = buffer[0 .. std.unicode.utf8Encode(codepoint, &buffer) catch return error.InvalidCodepoint];
+                try writer.writeAll(decoded);
             },
             else => continue,
         }

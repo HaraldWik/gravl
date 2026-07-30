@@ -76,11 +76,8 @@ pub fn main(init: std.process.Init) !void {
 
     try window.setTitle("Hello, World!");
 
-    var buffer: [128]u8 = undefined;
-    var writer: std.Io.Writer = .fixed(&buffer);
-
     while (!window.should_close) {
-        try window.poll(.{ .text = &writer });
+        try window.poll(.{});
         _ = try io.sleep(.fromMicroseconds(16), .real);
 
         const delta_time = getDeltaTime(io);
@@ -105,27 +102,16 @@ pub fn main(init: std.process.Init) !void {
         try renderer.submit(window.size);
         try renderer.resize(window.size);
 
-        for (0..Window.Keyboard.Key.count) |i| {
-            const key: Window.Keyboard.Key = @enumFromInt(i);
-            const state = window.keyboard.get(key);
-            switch (state) {
-                .none => {},
-                .press, .release, .repeat => std.debug.print("{t}: {t}\n", .{ state, key }),
-            }
-        }
-        // if (writer.buffered().len > 0) {
-        // std.debug.print("{s}", .{writer.buffered()});
-        _ = writer.consumeAll();
+        // for (0..Window.Keyboard.Key.count) |i| {
+        //     const key: Window.Keyboard.Key = @enumFromInt(i);
+        //     const state = window.keyboard.get(key);
+        //     switch (state) {
+        //         .none => {},
+        //         .press, .release, .repeat => std.debug.print("{t}: {t}\n", .{ state, key }),
+        //     }
         // }
 
-        if (window.keyboard.get(.b).isDown()) std.log.info("fps: {d}", .{fps});
-        if (window.pointer.buttons.middle) std.log.info("middle", .{});
-        if (window.pointer.buttons.right) std.log.info("right", .{});
-        if (window.pointer.buttons.forward) std.log.info("forward", .{});
-        if (window.pointer.buttons.back) std.log.info("back", .{});
-
-        if (window.pointer.axis.horizontal != 0) std.log.info("pointer.axis.horizontal: {d}", .{window.pointer.axis.horizontal});
-        if (window.pointer.axis.vertical != 0) std.log.info("pointer.axis.vertical: {d}", .{window.pointer.axis.vertical});
+        if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
     }
 }
 
