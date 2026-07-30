@@ -13,8 +13,8 @@
             .hash = "N-V-__8AAMCWEADA0AS-1LfBEtixZLJAb_XQKQpgSmR2uxAO",
         },
         .xcb = .{
-            .url = "git+https://github.com/HaraldWik/xcb-zig#fb92e06ccaccd3270cbe8856912bd7b402dd496b",
-            .hash = "xcb-0.0.0-OuD1_1SSBQDt9aWRfFHjoQxRjrkjiN5iBjJppo_Qisoo",
+            .url = "git+https://github.com/HaraldWik/xcb-zig#85fada06a6b62f63d767a088557e28566958d034",
+            .hash = "xcb-0.0.0-OuD1_3aACgCyUZe4fNIpe-A5a4pZrJOKCw_bhJW5JKay",
         },
         .win32 = .{
             .url = "git+https://github.com/SquareMan/zigwin32#01df0ea99ae90afc3f46117055ab788646872eba",

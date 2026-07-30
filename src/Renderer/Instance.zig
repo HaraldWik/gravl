@@ -19,6 +19,25 @@ pub fn init(
     layers: []const [*:0]const u8,
     extensions: []const [*:0]const u8,
 ) InitError!Instance {
+    const available_extensions = try vkb.enumerateInstanceExtensionPropertiesAlloc(null, gpa);
+    defer gpa.free(available_extensions);
+
+    const extension_available = try gpa.alloc(bool, extensions.len);
+    defer gpa.free(extension_available);
+    @memset(extension_available, false);
+
+    for (available_extensions) |available_extension| {
+        for (extensions, extension_available) |requested_extension, *is_available| {
+            if (is_available.*) continue;
+
+            if (std.mem.orderZ(u8, @ptrCast(&available_extension.extension_name), requested_extension) == .eq) is_available.* = true;
+        }
+    }
+
+    for (extensions, extension_available) |requested_extension, is_available| {
+        if (!is_available) std.log.info("vulkan extension {s} is not present", .{requested_extension});
+    }
+
     const api_version = vk.makeApiVersion(0, 1, 4, 0);
 
     const application_info: *const vk.ApplicationInfo = &.{

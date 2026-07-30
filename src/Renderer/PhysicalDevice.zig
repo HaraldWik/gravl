@@ -20,8 +20,7 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
     const physical_devices = try instance.proxy.enumeratePhysicalDevicesAlloc(gpa);
     defer gpa.free(physical_devices);
 
-    if (physical_devices.len == 0)
-        return error.NoDevices;
+    if (physical_devices.len == 0) return error.NoDevices;
 
     var best: ?PhysicalDevice = null;
     var best_score: i32 = -1;
@@ -32,21 +31,14 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
         const families = try instance.proxy.getPhysicalDeviceQueueFamilyPropertiesAlloc(physical_device, gpa);
         defer gpa.free(families);
 
-        var graphics_queue_family_index: ?u32 = null;
+        const queue_family = for (families, 0..) |family, i| {
+            const index: u32 = @truncate(i);
 
-        for (families, 0..) |family, i| {
-            const index: u32 = @intCast(i);
+            const graphics_support = family.queue_flags.graphics_bit;
+            const surface_support = try instance.proxy.getPhysicalDeviceSurfaceSupportKHR(physical_device, index, surface.handle) == .true;
 
-            const supports_graphics = family.queue_flags.graphics_bit;
-            const supports_present = (try instance.proxy.getPhysicalDeviceSurfaceSupportKHR(physical_device, index, surface.handle)) == .true;
-
-            if (supports_graphics and supports_present) {
-                graphics_queue_family_index = index;
-                break;
-            }
-        }
-
-        const queue_family = graphics_queue_family_index orelse continue;
+            if (graphics_support and surface_support) break index;
+        } else continue;
 
         var score: i32 = switch (properties.device_type) {
             .discrete_gpu => 1000,

@@ -48,31 +48,29 @@ const debug_instance_extensions: []const [*:0]const u8 = if (builtin.mode == .De
 else
     &.{};
 
-pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
-    const layers: []const [*:0]const u8 = if (builtin.mode == .Debug) &.{
-        "VK_LAYER_KHRONOS_validation",
-    } else &.{};
+const layers: []const [*:0]const u8 = if (builtin.mode == .Debug)
+    &.{"VK_LAYER_KHRONOS_validation"}
+else
+    &.{};
 
+pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
     const platform_extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
         .linux, .freebsd, .netbsd, .openbsd => switch (window.inner) {
             .wayland => &.{
-                "VK_KHR_surface",
-                "VK_KHR_display",
-                "VK_KHR_wayland_surface",
+                vk.extensions.khr_surface.name,
+                vk.extensions.khr_wayland_surface.name,
             },
             .x11 => &.{
-                "VK_KHR_surface",
-                "VK_KHR_display",
-                "VK_KHR_xlib_surface",
-                "VK_KHR_xcb_surface",
+                vk.extensions.khr_surface.name,
+                vk.extensions.khr_xcb_surface.name,
             },
         },
         .windows => &.{
-            "VK_KHR_surface",
-            "VK_KHR_win32_surface",
+            vk.extensions.khr_surface.name,
+            vk.extensions.khr_win_32_surface.name,
         },
         .macos => &.{
-            "VK_KHR_surface",
+            vk.extensions.khr_surface.name,
             "VK_MVK_macos_surface",
         },
         else => &.{},
@@ -84,6 +82,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
     };
 
     const gpa_impl = try Allocator.init(allocator);
+    errdefer allocator.destroy(gpa_impl);
     const gpa = gpa_impl.allocator();
 
     var extensions: std.ArrayList([*:0]const u8) = try .initCapacity(gpa, debug_instance_extensions.len + 4);
@@ -97,13 +96,24 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
     const vkb: vk.BaseWrapper = .load(getInstanceProcAddr);
 
     const instance: Instance = try .init(gpa, vkb, layers, extensions.items);
+    errdefer instance.deinit(gpa);
+
     const debug_messenger: DebugMessenger = try .init(gpa, instance);
+    errdefer debug_messenger.deinit(gpa, instance);
+
     const surface: Surface = try .init(gpa, instance, window);
+    errdefer surface.deinit(gpa, instance);
+
     const physical_device: PhysicalDevice = try .pick(gpa, instance, surface);
     const device: Device = try .init(gpa, instance, physical_device, device_extensions);
+    errdefer device.deinit(gpa);
+
     var swapchain: Swapchain = undefined;
     try swapchain.create(gpa, instance, surface, physical_device, device, window.size);
+    errdefer swapchain.deinit(gpa, device);
+
     const command_handler: CommandHandler = try .init(gpa, physical_device, device);
+    errdefer command_handler.deinit(gpa, device);
 
     return .{
         .gpa_impl = gpa_impl,
