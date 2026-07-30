@@ -13,8 +13,6 @@ connection: xcb.Connection,
 handle: xcb.Xid,
 
 pub fn open(self: *X, window: *Window, options: Window.OpenOptions) !void {
-    _ = window;
-
     var libxcb = try std.DynLib.openZ("libxcb.so");
     errdefer libxcb.close();
 
@@ -48,6 +46,32 @@ pub fn open(self: *X, window: *Window, options: Window.OpenOptions) !void {
         },
     );
 
+    // if (options.app_id) |app_id| {
+    //     // e.g "gravl\x00Gravl\x00";
+
+    //     var buffer: [200]u8 = @splat(0);
+    //     var writer: std.Io.Writer = .fixed(&buffer);
+
+    //     try writer.writeAll(app_id);
+    //     try writer.writeByte(0);
+    //     try writer.writeAll(app_id);
+    //     try writer.writeByte(0);
+
+    //     const wm_class: [:0]const u8 = @ptrCast(writer.buffered());
+
+    //     _ = cr.changeProperty(
+    //         connection,
+    //         xcb.PROP_MODE.replace,
+    //         window_handle,
+    //         .{ .id = xcb.ATOM.wm_class },
+    //         .{ .id = xcb.ATOM.string },
+    //         8,
+    //         @intCast(wm_class.len),
+    //         @ptrCast(wm_class.ptr),
+    //     );
+    // }
+
+    self.setTitle(window, options.title) catch unreachable;
     cr.mapWindow(connection, window_handle);
     _ = bs.flush(connection);
 
@@ -110,4 +134,14 @@ pub fn setTitle(self: *X, window: *Window, title: [:0]const u8) !void {
     _ = self;
     _ = window;
     _ = title;
+    // self.cr.changeProperty(
+    //     self.connection,
+    //     xcb.PROP_MODE.replace,
+    //     self.handle,
+    //     .{ .id = xcb.ATOM.wm_name },
+    //     .{ .id = xcb.ATOM.string },
+    //     8,
+    //     @intCast(title.len),
+    //     @ptrCast(title.ptr),
+    // );
 }
