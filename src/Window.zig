@@ -27,6 +27,10 @@ pub const Inner = switch (native_os) {
         const close = @compileError("unsupported platform");
         const poll = @compileError("unsupported platform");
         const setTitle = @compileError("unsupported platform");
+        const minimize = @compileError("unsupported platform");
+        const maximize = @compileError("unsupported platform");
+        const restore = @compileError("unsupported platform");
+        const setFullscreen = @compileError("unsupported platform");
     },
 };
 
@@ -189,6 +193,20 @@ pub fn setTitle(self: *Window, title: [:0]const u8) !void {
     try self.call(.setTitle, .{title});
 }
 
+pub fn minimize(self: *Window) !void {
+    try self.call(.minimize, .{});
+}
+pub fn maximize(self: *Window) !void {
+    try self.call(.maximize, .{});
+}
+pub fn restore(self: *Window) !void {
+    try self.call(.restore, .{});
+}
+
+pub fn setFullscreen(self: *Window, enabled: bool) !void {
+    try self.call(.setFullscreen, .{enabled});
+}
+
 fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {
     switch (native_os) {
         .linux, .freebsd, .netbsd, .openbsd => switch (self.inner) {
@@ -198,7 +216,7 @@ fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {
             },
         },
         else => {
-            const inner = &self.*.inner;
+            const inner = &self.inner;
             const function = @field(@TypeOf(self.inner), @tagName(function_name));
             return @call(.always_inline, function, .{ inner, self } ++ args);
         },

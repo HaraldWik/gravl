@@ -90,7 +90,9 @@ pub fn main(init: std.process.Init) !void {
     // });
     // defer pipeline.deinit(renderer.gpa, renderer.device);
 
-    try window.setTitle("Hello, World!");
+    try window.setFullscreen(true);
+
+    var fullscreen: bool = true;
 
     while (!window.should_close) {
         try window.poll(.{});
@@ -109,8 +111,13 @@ pub fn main(init: std.process.Init) !void {
         renderer.bindShader(.{ .handle = .null_handle, .stage = .tessellation_control });
         renderer.bindShader(.{ .handle = .null_handle, .stage = .tessellation_evaluation });
 
-        if (renderer.command_handler.frame_index % 3000 > 1500) {
+        if (window.keyboard.isDown(.space)) {
             renderer.bindShader(vertex2);
+        }
+
+        if (window.keyboard.isDown(.escape)) {
+            fullscreen = !fullscreen;
+            try window.setFullscreen(fullscreen);
         }
 
         renderer.draw();
@@ -118,14 +125,7 @@ pub fn main(init: std.process.Init) !void {
         try renderer.submit(window.size);
         try renderer.resize(window.size);
 
-        // for (0..Window.Keyboard.Key.count) |i| {
-        //     const key: Window.Keyboard.Key = @enumFromInt(i);
-        //     const state = window.keyboard.get(key);
-        //     switch (state) {
-        //         .none => {},
-        //         .press, .release, .repeat => std.debug.print("{t}: {t}\n", .{ state, key }),
-        //     }
-        // }
+        std.debug.print("{f}", .{window.keyboard});
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
     }

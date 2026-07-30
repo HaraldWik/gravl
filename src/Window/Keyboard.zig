@@ -2,6 +2,7 @@ const Keyboard = @This();
 
 const std = @import("std");
 const win32 = @import("win32").everything;
+const xkb = @import("xkbcommon");
 
 previous: BitSet = .empty,
 current: BitSet = .empty,
@@ -38,16 +39,16 @@ pub const Key = enum(u8) {
     z,
 
     // Numbers
-    num_0,
-    num_1,
-    num_2,
-    num_3,
-    num_4,
-    num_5,
-    num_6,
-    num_7,
-    num_8,
-    num_9,
+    @"0",
+    @"1",
+    @"2",
+    @"3",
+    @"4",
+    @"5",
+    @"6",
+    @"7",
+    @"8",
+    @"9",
 
     // Function keys
     f1,
@@ -169,6 +170,14 @@ pub fn isUp(self: Keyboard, key: Key) bool {
     return !self.isDown(key);
 }
 
+pub fn anyDown(self: Keyboard) bool {
+    return self.current.mask > 0;
+}
+
+pub fn anyUp(self: Keyboard) bool {
+    return !self.anyDown();
+}
+
 pub fn press(self: *Keyboard, key: Key) void {
     self.current.set(@intFromEnum(key));
 }
@@ -179,6 +188,35 @@ pub fn release(self: *Keyboard, key: Key) void {
 
 pub fn progress(self: *Keyboard) void {
     self.previous = self.current;
+}
+
+pub fn format(self: Keyboard, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    try self.formatState(w, .press);
+    try self.formatState(w, .repeat);
+    try self.formatState(w, .release);
+}
+
+pub fn formatState(self: Keyboard, w: *std.Io.Writer, comptime state: Key.State) std.Io.Writer.Error!void {
+    var first = true;
+    var any_found = false;
+
+    for (0..Key.count) |i| {
+        const key: Key = @enumFromInt(i);
+
+        if (self.get(key) != state) continue;
+
+        if (!any_found) {
+            try w.print("{t}: ", .{state});
+            any_found = true;
+        }
+
+        if (!first) try w.writeAll(", ");
+
+        try w.writeAll(@tagName(key));
+        first = false;
+    }
+
+    if (any_found) try w.writeAll("\n");
 }
 
 pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {
@@ -217,16 +255,16 @@ pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {
         .Z => .z,
 
         // Numbers
-        .@"0" => .num_0,
-        .@"1" => .num_1,
-        .@"2" => .num_2,
-        .@"3" => .num_3,
-        .@"4" => .num_4,
-        .@"5" => .num_5,
-        .@"6" => .num_6,
-        .@"7" => .num_7,
-        .@"8" => .num_8,
-        .@"9" => .num_9,
+        .@"0" => .@"0",
+        .@"1" => .@"1",
+        .@"2" => .@"2",
+        .@"3" => .@"3",
+        .@"4" => .@"4",
+        .@"5" => .@"5",
+        .@"6" => .@"6",
+        .@"7" => .@"7",
+        .@"8" => .@"8",
+        .@"9" => .@"9",
 
         // Function keys
         .F1 => .f1,
@@ -306,6 +344,125 @@ pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {
         .CAPITAL => .caps_lock,
         .NUMLOCK => .num_lock,
         .SCROLL => .scroll_lock,
+
+        else => null,
+    };
+}
+
+pub fn fromXkb(symbol: xkb.Keysym) ?Key {
+    const Ks = xkb.Keysym;
+
+    return switch (symbol) {
+        Ks.A, Ks.a => .a,
+        Ks.B, Ks.b => .b,
+        Ks.C, Ks.c => .c,
+        Ks.D, Ks.d => .d,
+        Ks.E, Ks.e => .e,
+        Ks.F, Ks.f => .f,
+        Ks.G, Ks.g => .g,
+        Ks.H, Ks.h => .h,
+        Ks.I, Ks.i => .i,
+        Ks.J, Ks.j => .j,
+        Ks.K, Ks.k => .k,
+        Ks.L, Ks.l => .l,
+        Ks.M, Ks.m => .m,
+        Ks.N, Ks.n => .n,
+        Ks.O, Ks.o => .o,
+        Ks.P, Ks.p => .p,
+        Ks.Q, Ks.q => .q,
+        Ks.R, Ks.r => .r,
+        Ks.S, Ks.s => .s,
+        Ks.T, Ks.t => .t,
+        Ks.U, Ks.u => .u,
+        Ks.V, Ks.v => .v,
+        Ks.W, Ks.w => .w,
+        Ks.X, Ks.x => .x,
+        Ks.Y, Ks.y => .y,
+        Ks.Z, Ks.z => .z,
+
+        Ks.@"0" => .@"0",
+        Ks.@"1" => .@"1",
+        Ks.@"2" => .@"2",
+        Ks.@"3" => .@"3",
+        Ks.@"4" => .@"4",
+        Ks.@"5" => .@"5",
+        Ks.@"6" => .@"6",
+        Ks.@"7" => .@"7",
+        Ks.@"8" => .@"8",
+        Ks.@"9" => .@"9",
+
+        Ks.F1 => .f1,
+        Ks.F2 => .f2,
+        Ks.F3 => .f3,
+        Ks.F4 => .f4,
+        Ks.F5 => .f5,
+        Ks.F6 => .f6,
+        Ks.F7 => .f7,
+        Ks.F8 => .f8,
+        Ks.F9 => .f9,
+        Ks.F10 => .f10,
+        Ks.F11 => .f11,
+        Ks.F12 => .f12,
+
+        Ks.Shift_L => .left_shift,
+        Ks.Shift_R => .right_shift,
+        Ks.Control_L => .left_control,
+        Ks.Control_R => .right_control,
+        Ks.Alt_L => .left_alt,
+        Ks.Alt_R => .right_alt,
+        Ks.Super_L => .left_super,
+        Ks.Super_R => .right_super,
+
+        Ks.Escape => .escape,
+        Ks.Return => .enter,
+        Ks.Tab => .tab,
+        Ks.BackSpace => .backspace,
+        Ks.space => .space,
+
+        Ks.Insert => .insert,
+        Ks.Delete => .delete,
+        Ks.Home => .home,
+        Ks.End => .end,
+        Ks.Page_Up => .page_up,
+        Ks.Page_Down => .page_down,
+
+        Ks.Up => .up,
+        Ks.Down => .down,
+        Ks.Left => .left,
+        Ks.Right => .right,
+
+        Ks.minus => .minus,
+        Ks.equal => .equal,
+        Ks.bracketleft => .left_bracket,
+        Ks.bracketright => .right_bracket,
+        Ks.semicolon => .semicolon,
+        Ks.apostrophe => .apostrophe,
+        Ks.comma => .comma,
+        Ks.period => .period,
+        Ks.slash => .slash,
+        Ks.backslash => .backslash,
+        Ks.grave => .grave,
+
+        Ks.KP_0 => .keypad_0,
+        Ks.KP_1 => .keypad_1,
+        Ks.KP_2 => .keypad_2,
+        Ks.KP_3 => .keypad_3,
+        Ks.KP_4 => .keypad_4,
+        Ks.KP_5 => .keypad_5,
+        Ks.KP_6 => .keypad_6,
+        Ks.KP_7 => .keypad_7,
+        Ks.KP_8 => .keypad_8,
+        Ks.KP_9 => .keypad_9,
+        Ks.KP_Add => .keypad_add,
+        Ks.KP_Subtract => .keypad_subtract,
+        Ks.KP_Multiply => .keypad_multiply,
+        Ks.KP_Divide => .keypad_divide,
+        Ks.KP_Enter => .keypad_enter,
+        Ks.KP_Decimal => .keypad_decimal,
+
+        Ks.Caps_Lock => .caps_lock,
+        Ks.Num_Lock => .num_lock,
+        Ks.Scroll_Lock => .scroll_lock,
 
         else => null,
     };

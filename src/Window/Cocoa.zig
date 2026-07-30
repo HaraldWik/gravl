@@ -24,3 +24,24 @@ pub fn setTitle(self: *Cocoa, window: *Window, title: [:0]const u8) !void {
     _ = window;
     _ = title;
 }
+
+pub fn minimize(self: *Cocoa, window: *Window) !void {
+    _ = self;
+    _ = window;
+}
+
+pub fn maximize(self: *Cocoa, window: *Window) !void {
+    _ = self;
+    _ = window;
+}
+
+pub fn restore(self: *Cocoa, window: *Window) !void {
+    _ = self;
+    _ = window;
+}
+
+pub fn setFullscreen(self: *Cocoa, window: *Window, enabled: bool) !void {
+    _ = self;
+    _ = window;
+    _ = enabled;
+}

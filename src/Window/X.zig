@@ -10,7 +10,7 @@ bs: xcb.BaseWrapper,
 cr: xcb.CoreWrapper,
 
 connection: xcb.Connection,
-handle: xcb.Xid,
+id: xcb.Window,
 
 pub fn open(self: *X, window: *Window, options: Window.OpenOptions) !void {
     var libxcb = try std.DynLib.openZ("libxcb.so");
@@ -26,12 +26,12 @@ pub fn open(self: *X, window: *Window, options: Window.OpenOptions) !void {
     const setup = bs.getSetup(connection);
     const screen = xcb.setupRootsIterator(setup).data.?.*;
 
-    const window_handle: xcb.Window = bs.generateId(connection);
+    const window_id: xcb.Window = bs.generateId(connection);
 
     cr.createWindow(
         connection,
         0,
-        window_handle,
+        window_id,
         screen.root,
         if (options.position) |position| @truncate(position.x) else 0,
         if (options.position) |position| @truncate(position.y) else 0,
@@ -72,7 +72,7 @@ pub fn open(self: *X, window: *Window, options: Window.OpenOptions) !void {
     // }
 
     self.setTitle(window, options.title) catch unreachable;
-    cr.mapWindow(connection, window_handle);
+    cr.mapWindow(connection, window_id);
     _ = bs.flush(connection);
 
     self.* = .{
@@ -80,14 +80,14 @@ pub fn open(self: *X, window: *Window, options: Window.OpenOptions) !void {
         .bs = bs,
         .cr = cr,
         .connection = connection,
-        .handle = window_handle,
+        .id = window_id,
     };
 }
 
 pub fn close(self: *X, window: *Window) void {
     _ = window;
 
-    self.cr.destroyWindow(self.connection, self.handle);
+    self.cr.destroyWindow(self.connection, self.id);
     self.bs.disconnect(self.connection);
     self.libxcb.close();
     self.* = undefined;
@@ -144,4 +144,25 @@ pub fn setTitle(self: *X, window: *Window, title: [:0]const u8) !void {
     //     @intCast(title.len),
     //     @ptrCast(title.ptr),
     // );
+}
+
+pub fn minimize(self: *X, window: *Window) !void {
+    _ = self;
+    _ = window;
+}
+
+pub fn maximize(self: *X, window: *Window) !void {
+    _ = self;
+    _ = window;
+}
+
+pub fn restore(self: *X, window: *Window) !void {
+    _ = self;
+    _ = window;
+}
+
+pub fn setFullscreen(self: *X, window: *Window, enabled: bool) !void {
+    _ = self;
+    _ = window;
+    _ = enabled;
 }

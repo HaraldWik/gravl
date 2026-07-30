@@ -14,6 +14,13 @@ hwnd: std.os.windows.HWND,
 
 pending_high_surrogate: ?u16 = null,
 
+fullscreen_data: struct {
+    enabled: bool = false,
+    style: usize = 0,
+    ex_style: usize = 0,
+    rect: win32.RECT = std.mem.zeroes(win32.RECT),
+} = .{},
+
 pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Window.OpenOptions) anyerror!void {
     const hinstance: std.os.windows.HINSTANCE = @ptrCast(win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle);
 
@@ -168,6 +175,82 @@ pub fn setTitle(self: *Win32, window: *Window, title: [:0]const u8) !void {
     const title_utf16 = try std.unicode.utf8ToUtf16LeAllocZ(self.gpa, title);
     defer self.gpa.free(title_utf16);
     _ = win32.SetWindowTextW(@ptrCast(self.hwnd), @ptrCast(title_utf16));
+}
+
+pub fn minimize(self: *Win32, _: *Window) !void {
+    _ = win32.ShowWindow(@ptrCast(self.hwnd), win32.SW_MINIMIZE);
+}
+
+pub fn maximize(self: *Win32, _: *Window) !void {
+    _ = win32.ShowWindow(@ptrCast(self.hwnd), win32.SW_MAXIMIZE);
+}
+
+pub fn restore(self: *Win32, _: *Window) !void {
+    _ = win32.ShowWindow(@ptrCast(self.hwnd), win32.SW_RESTORE);
+}
+
+pub fn setFullscreen(self: *Win32, _: *Window, enabled: bool) !void {
+    if (self.fullscreen_data.enabled == enabled)
+        return;
+
+    if (enabled) {
+        self.fullscreen_data.style = win32.getWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_STYLE));
+
+        self.fullscreen_data.ex_style = win32.getWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_EXSTYLE));
+
+        _ = win32.GetWindowRect(@ptrCast(self.hwnd), &self.fullscreen_data.rect);
+
+        var monitor_info = std.mem.zeroInit(win32.MONITORINFO, .{
+            .cbSize = @sizeOf(win32.MONITORINFO),
+        });
+
+        const monitor = win32.MonitorFromWindow(@ptrCast(self.hwnd), win32.MONITOR_DEFAULTTONEAREST);
+
+        _ = win32.GetMonitorInfoW(monitor, &monitor_info);
+
+        _ = win32.setWindowLongPtrW(
+            @ptrCast(self.hwnd),
+            @intFromEnum(win32.GWL_STYLE),
+            self.fullscreen_data.style & ~@as(usize, @intCast(@as(u32, @bitCast(win32.WS_OVERLAPPEDWINDOW)))),
+        );
+
+        _ = win32.setWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_EXSTYLE), 0);
+
+        _ = win32.SetWindowPos(
+            @ptrCast(self.hwnd),
+            @ptrFromInt(0),
+            monitor_info.rcMonitor.left,
+            monitor_info.rcMonitor.top,
+            monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
+            monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
+            win32.SWP_FRAMECHANGED,
+        );
+
+        self.fullscreen_data.enabled = true;
+    } else {
+        _ = win32.setWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_STYLE), self.fullscreen_data.style);
+
+        _ = win32.setWindowLongPtrW(@ptrCast(self.hwnd), @intFromEnum(win32.GWL_EXSTYLE), self.fullscreen_data.ex_style);
+
+        _ = win32.SetWindowPos(
+            @ptrCast(self.hwnd),
+            null,
+            self.fullscreen_data.rect.left,
+            self.fullscreen_data.rect.top,
+            self.fullscreen_data.rect.right - self.fullscreen_data.rect.left,
+            self.fullscreen_data.rect.bottom - self.fullscreen_data.rect.top,
+            .{ .DRAWFRAME = 1, .NOZORDER = 1, .SHOWWINDOW = 1 },
+        );
+
+        // _ = win32.RedrawWindow(
+        //     @ptrCast(self.hwnd),
+        //     null,
+        //     null,
+        //     .{ .INVALIDATE = 1, .UPDATENOW = 1, .FRAME = 1 },
+        // );
+
+        self.fullscreen_data.enabled = false;
+    }
 }
 
 fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {

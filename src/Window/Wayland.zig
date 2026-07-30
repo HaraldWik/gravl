@@ -8,19 +8,39 @@ const wl = @import("wayland").client.wl;
 const wp = @import("wayland").client.wp;
 const xdg = @import("wayland").client.xdg;
 const zxdg = @import("wayland").client.zxdg;
+const xkbcommon = @import("xkbcommon");
 
 window: *Window,
 
 display: *wl.Display,
+compositor: *wl.Compositor,
+wm_base: *xdg.WmBase,
+seat: *wl.Seat,
+decoration_manager: ?*zxdg.DecorationManagerV1 = null,
+
+pointer: ?*wl.Pointer = null,
+keyboard: ?*wl.Keyboard = null,
+xkb: struct {
+    context: *xkbcommon.Context,
+    state: ?*xkbcommon.State = null,
+    keymap: ?*xkbcommon.Keymap = null,
+    keymap_data: []align(std.heap.page_size_min) u8 = &.{},
+    modifiers: packed struct {
+        depressed: u32 = 0,
+        latched: u32 = 0,
+        locked: u32 = 0,
+        group: u32 = 0,
+    } = .{},
+},
 
 surface: *wl.Surface,
 xdg_surface: *xdg.Surface,
 toplevel: *xdg.Toplevel,
+toplevel_decoration: ?*zxdg.ToplevelDecorationV1 = null,
 
-frame_callback: ?*wl.Callback = null,
+decoration_mode: zxdg.ToplevelDecorationV1.Mode = .client_side,
 
-pointer: ?*wl.Pointer = null,
-keyboard: ?*wl.Keyboard = null,
+poll_options: *const Window.PollOptions = &.{},
 
 pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void {
     try Loader.load();
@@ -37,22 +57,31 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     if (display.roundtrip() != .SUCCESS) return error.Roundtrip;
 
     const compositor = registry_data.compositor.?;
-    const xdg_wm_base = registry_data.xdg_wm_base.?;
+    const wm_base = registry_data.xdg_wm_base.?;
     const seat = registry_data.seat.?;
+    const decoration_manager = registry_data.zxdg_decoration_manager;
 
-    xdg_wm_base.setListener(?*anyopaque, xdgWmBaseListener, null);
+    wm_base.setListener(?*anyopaque, xdgWmBaseListener, null);
     seat.setListener(*Wayland, seatListener, self);
+
+    const xkb_context = xkbcommon.Context.new(.no_flags) orelse return error.CreateXkbuserdata;
+    self.xkb = .{ .context = xkb_context };
 
     if (display.roundtrip() != .SUCCESS) return error.Roundtrip;
 
     const surface = try compositor.createSurface();
-    const xdg_surface = try xdg_wm_base.getXdgSurface(surface);
+    const xdg_surface = try wm_base.getXdgSurface(surface);
     const toplevel = try xdg_surface.getToplevel();
+    const toplevel_decoration = if (decoration_manager) |manager| try manager.getToplevelDecoration(toplevel) else null;
 
     var configured: bool = false;
     surface.setListener(*Window, surfaceListener, window);
     xdg_surface.setListener(*bool, xdgSurfaceListener, &configured);
     toplevel.setListener(*Wayland, xdgToplevelListener, self);
+    if (toplevel_decoration) |decoration| {
+        decoration.setListener(*Wayland, zxdgToplevelDecorationListener, self);
+        decoration.setMode(.server_side);
+    }
 
     if (options.app_id) |app_id| toplevel.setAppId(app_id.ptr);
     toplevel.setTitle(options.title.ptr);
@@ -63,16 +92,28 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     self.* = .{
         .window = window,
         .display = display,
+        .compositor = compositor,
+        .wm_base = wm_base,
+        .seat = seat,
+        .decoration_manager = decoration_manager,
+
+        .xkb = self.xkb,
+
         .surface = surface,
         .xdg_surface = xdg_surface,
         .toplevel = toplevel,
+        .toplevel_decoration = toplevel_decoration,
     };
 }
 
 pub fn close(self: *Wayland, window: *Window) void {
     _ = window;
+
     if (self.pointer) |pointer| pointer.destroy();
     if (self.keyboard) |keyboard| keyboard.destroy();
+    if (self.xkb.state) |state| state.unref();
+    if (self.xkb.keymap) |keymap| keymap.unref();
+    self.xkb.context.unref();
 
     self.toplevel.destroy();
     self.xdg_surface.destroy();
@@ -85,9 +126,10 @@ pub fn close(self: *Wayland, window: *Window) void {
 
 pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void {
     const display = self.display;
-    _ = options;
 
     if (window.should_close) return;
+
+    self.poll_options = &options;
 
     while (display.prepareRead() == false) {
         if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
@@ -119,19 +161,38 @@ pub fn setTitle(self: *Wayland, window: *Window, title: [:0]const u8) !void {
     self.toplevel.setTitle(title);
 }
 
+pub fn minimize(self: *Wayland, _: *Window) !void {
+    self.toplevel.setMinimized();
+}
+
+pub fn maximize(self: *Wayland, _: *Window) !void {
+    self.toplevel.setMaximized();
+}
+
+pub fn restore(self: *Wayland, _: *Window) !void {
+    self.toplevel.unsetMaximized();
+}
+
+pub fn setFullscreen(self: *Wayland, _: *Window, enabled: bool) !void {
+    if (enabled)
+        self.toplevel.setFullscreen(null)
+    else
+        self.toplevel.unsetFullscreen();
+}
+
 const RegistryData = struct {
     compositor: ?*wl.Compositor = null,
     xdg_wm_base: ?*xdg.WmBase = null,
     seat: ?*wl.Seat = null,
-    wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
     zxdg_decoration_manager: ?*zxdg.DecorationManagerV1 = null,
+    wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
 
     pub fn listener(registry: *wl.Registry, event: wl.Registry.Event, self: *RegistryData) void {
         switch (event) {
             .global => |global| inline for (std.meta.fields(RegistryData)) |field| {
                 const GlobalType = std.meta.Child(std.meta.Child(field.type));
                 if (std.mem.orderZ(u8, global.interface, GlobalType.interface.name) == .eq) {
-                    @field(self.*, field.name) = registry.bind(global.name, GlobalType, 1) catch return;
+                    @field(self.*, field.name) = registry.bind(global.name, GlobalType, GlobalType.interface.version) catch return;
                     return;
                 }
             },
@@ -201,32 +262,94 @@ fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland) void
     }
 }
 
-fn keyboardListener(_: *wl.Keyboard, event: wl.Keyboard.Event, self: *Wayland) void {
+fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *Wayland) void {
     const window = self.window;
-    const keyboard = &self.*.window.keyboard;
+    const keyboard = &self.window.keyboard;
+    const xkb = &self.xkb;
 
     switch (event) {
-        .keymap => {},
+        .keymap => |keymap| {
+            defer _ = std.posix.system.close(keymap.fd);
+            if (keymap.format != .xkb_v1) return;
+
+            if (xkb.state) |xkb_state| {
+                xkb_state.unref();
+                xkb.state = null;
+            }
+
+            if (xkb.keymap) |xbk_keymap| {
+                xbk_keymap.unref();
+                xkb.keymap = null;
+            }
+
+            if (xkb.keymap_data.len != 0) {
+                std.posix.munmap(xkb.keymap_data);
+                xkb.keymap_data = &.{};
+            }
+
+            xkb.keymap_data = std.posix.mmap(null, keymap.size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, keymap.fd, 0) catch return;
+            xkb.keymap = xkbcommon.Keymap.newFromBuffer(xkb.context, xkb.keymap_data.ptr, xkb.keymap_data.len, .text_v1, .no_flags) orelse return;
+            xkb.state = xkbcommon.State.new(xkb.keymap.?) orelse return;
+            _ = xkb.state.?.updateMask(
+                xkb.modifiers.depressed,
+                xkb.modifiers.latched,
+                xkb.modifiers.locked,
+                xkb.modifiers.group,
+                0,
+                0,
+            );
+        },
+        .modifiers => |modifiers| {
+            xkb.modifiers = .{
+                .depressed = modifiers.mods_depressed,
+                .latched = modifiers.mods_latched,
+                .locked = modifiers.mods_locked,
+                .group = modifiers.group,
+            };
+            if (xkb.state == null or xkb.keymap == null) return;
+
+            _ = xkb.state.?.updateMask(modifiers.mods_depressed, modifiers.mods_latched, modifiers.mods_locked, modifiers.group, 0, 0);
+        },
         .enter => |enter| {
             window.focused = true;
             for (enter.keys.slice(u32)) |key| {
-                std.log.info("key: {d}", .{key});
+                const key_event: wl.Keyboard.Event = .{ .key = .{
+                    .serial = enter.serial,
+                    .time = 0,
+                    .key = key,
+                    .state = .pressed,
+                } };
+
+                keyboardListener(wl_keyboard, key_event, self);
             }
         },
         .leave => window.focused = false,
         .key => |key| {
-            const scancode = key.key + 30;
+            if (xkb.state == null or xkb.keymap == null) return;
 
-            const k: Window.Keyboard.Key = @enumFromInt((scancode) % Window.Keyboard.Key.count);
+            const symbol = xkb.state.?.keyGetOneSym(key.key + 8);
+
+            if (key.state == .pressed) if (self.poll_options.text) |writer| {
+                var buffer: [8]u8 = undefined;
+                const bytes = buffer[0..@intCast(symbol.toUTF8(&buffer, buffer.len))];
+                writer.writeAll(bytes) catch {};
+            };
+
+            const k = Window.Keyboard.fromXkb(symbol) orelse return;
 
             switch (key.state) {
                 .pressed => keyboard.press(k),
                 .released => keyboard.release(k),
                 _ => unreachable,
             }
+
+            // Enter events report keys already held on focus gain with time = 0.
+            // Treat them as repeats instead of new key presses.
+            if (key.time == 0) keyboard.previous.set(@intFromEnum(k));
         },
-        .modifiers => {},
-        .repeat_info => {},
+        .repeat_info => |info| {
+            std.log.info("{any}", .{info});
+        },
     }
 }
 
@@ -270,6 +393,10 @@ fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, self: *Wayla
         },
         .close => window.should_close = true,
     }
+}
+
+fn zxdgToplevelDecorationListener(_: *zxdg.ToplevelDecorationV1, event: zxdg.ToplevelDecorationV1.Event, self: *Wayland) void {
+    self.decoration_mode = event.configure.mode;
 }
 
 var loader: Loader = .{};

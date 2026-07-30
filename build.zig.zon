@@ -21,6 +21,15 @@
             .hash = "zigwin32-25.0.28-preview-qYSj4tyL5APmYxQI4_nKfd431j6VtaZnQkOb9IY6o5TR",
         },
 
+        .xkbcommon = .{
+            .url = "git+https://github.com/ifreund/zig-xkbcommon/#6c2f41e269adde0d2cd58d20c02c4f8803d83eb1",
+            .hash = "xkbcommon-0.5.0-dev-VDqIe0y2AgA1RzA2ICMdGhaAgSXdhtRTbYybQQu7WfOa",
+        },
+        .libxkbcommon = .{
+            .url = "git+https://github.com/HaraldWik/libxkbcommon#5caf185f3c1981cc56869c690361902e5612047e",
+            .hash = "libxkbcommon-1.11.0-93LaF31wAgDBmMuuxfPTZ2xJiOc3ZOb5OwOVi4FlD5iy",
+        },
+
         .vulkan = .{
             .url = "git+https://github.com/Snektron/vulkan-zig?ref=zig-0.16-compat#b496a6a561ffbbeb530b0f9ed4e059f88c0723a5",
             .hash = "vulkan-0.0.0-r7Ytx7N9AwD7IZt5_XNHtkJ4G9qY0pCH-cpcOsbL8wzD",

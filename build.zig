@@ -41,6 +41,17 @@ pub fn build(b: *std.Build) void {
 
     const win32 = b.dependency("win32", .{}).module("win32");
 
+    const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
+
+    const libxkbcommon = b.dependency("libxkbcommon", .{
+        .target = target,
+        .optimize = optimize,
+        .@"xkb-config-root" = "/usr/share/X11/xkb",
+        .@"x-locale-root" = "/usr/share/X11/locale",
+    }).artifact("xkbcommon");
+
+    xkbcommon.linkLibrary(libxkbcommon);
+
     const vulkan_registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml");
 
     const vulkan_registry_path: std.Build.LazyPath = if (override_vulkan_registry) |path|
@@ -70,7 +81,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    if (target.result.os.tag != .windows) exe.root_module.linkSystemLibrary("xcb", .{});
+    if (target.result.os.tag != .windows) {
+        exe.root_module.addImport("xkbcommon", xkbcommon);
+    }
 
     b.installArtifact(exe);
 
