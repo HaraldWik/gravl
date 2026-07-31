@@ -59,6 +59,7 @@ pub fn main(init: std.process.Init) !void {
         },
     });
     defer window.close();
+    try window.setPointerVisible(false);
     try window.setPointerConstraint(.locked);
     try window.setPointerRelative(true);
 
@@ -142,7 +143,7 @@ pub fn main(init: std.process.Init) !void {
         fragment.bind(renderer);
 
         if (window.keyboard.isDown(.space)) {
-            // vertex2.bind(renderer);
+            vertex2.bind(renderer);
             renderer.setPolygonMode(.{ .line = .{ .width = 1.2 } });
         }
 
@@ -155,16 +156,6 @@ pub fn main(init: std.process.Init) !void {
         // std.debug.print("{f}", .{window.keyboard});
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
-
-        switch (window.pointer.movement) {
-            .position => |pos| {
-                if (pos.x + pos.y > 0)
-                    std.log.info("{any}", .{pos});
-            },
-            .relative => |relative| {
-                std.log.debug("dx: {d} dy: {d}", .{ relative.dx, relative.dy });
-            },
-        }
     }
 }
 

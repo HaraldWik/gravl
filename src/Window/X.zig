@@ -167,6 +167,12 @@ pub fn setFullscreen(self: *X, window: *Window, enabled: bool) !void {
     _ = enabled;
 }
 
+pub fn setPointerVisible(self: *X, window: *Window, visible: bool) !void {
+    _ = self;
+    _ = window;
+    _ = visible;
+}
+
 pub fn setPointerConstraint(self: *X, window: *Window, constraint: Window.Pointer.Constraint) !void {
     _ = self;
     _ = window;

@@ -213,6 +213,10 @@ pub fn setFullscreen(self: *Window, enabled: bool) !void {
     try self.call(.setFullscreen, .{enabled});
 }
 
+pub fn setPointerVisible(self: *Window, visible: bool) !void {
+    try self.call(.setPointerVisible, .{visible});
+}
+
 pub fn setPointerConstraint(self: *Window, constraint: Pointer.Constraint) !void {
     try self.call(.setPointerConstraint, .{constraint});
 }

@@ -21,6 +21,11 @@ fullscreen_data: struct {
     rect: win32.RECT = std.mem.zeroes(win32.RECT),
 } = .{},
 
+// TODO: put in sub structure
+pointer_visible: bool = true,
+pointer_constraint: Window.Pointer.Constraint = .none,
+relative_pointer: bool = false,
+
 pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Window.OpenOptions) anyerror!void {
     const hinstance: std.os.windows.HINSTANCE = @ptrCast(win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle);
 
@@ -61,6 +66,15 @@ pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Wind
     _ = win32.ShowWindow(hwnd, .{ .SHOWNORMAL = 1 });
     check(win32.UpdateWindow(hwnd)) catch return error.UpdateWindow;
 
+    var raw_input_device: win32.RAWINPUTDEVICE = .{
+        .usUsagePage = 0x01, // Generic desktop controls
+        .usUsage = 0x02, // Mouse
+        .dwFlags = win32.RIDEV_INPUTSINK,
+        .hwndTarget = hwnd,
+    };
+
+    check(win32.RegisterRawInputDevices(@ptrCast(&raw_input_device), 1, @sizeOf(win32.RAWINPUTDEVICE))) catch return error.RegisterRawInputDevices;
+
     self.* = .{
         .gpa = gpa,
         .hinstance = hinstance,
@@ -93,16 +107,47 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 .y = @intCast(@as(u16, @truncate(std.math.cast(u32, msg.lParam >> 16) orelse continue))),
             },
             win32.WM_USER + win32.WM_SETFOCUS => {
-                // capture mouse
                 window.focused = true;
+                if (!self.pointer_visible) _ = win32.ShowCursor(win32.FALSE);
+                try self.setPointerConstraint(window, self.pointer_constraint);
             },
-            win32.WM_USER + win32.WM_KILLFOCUS => window.focused = false,
+            win32.WM_USER + win32.WM_KILLFOCUS => {
+                window.focused = false;
+                _ = win32.ShowCursor(win32.TRUE);
+                check(win32.ClipCursor(null)) catch return error.ClipCursor;
+            },
 
-            win32.WM_MOUSEMOVE => {
+            win32.WM_MOUSEMOVE => if (!self.relative_pointer) {
                 const x: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @intCast(msg.lParam)))));
                 const y: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @intCast(msg.lParam >> 16)))));
 
                 pointer.movement = .{ .position = .{ .x = x, .y = y } };
+            },
+            win32.WM_INPUT => if (self.relative_pointer) {
+                var size: u32 = @sizeOf(win32.RAWINPUT);
+                var input: win32.RAWINPUT = undefined;
+
+                check(win32.GetRawInputData(
+                    @ptrFromInt(@as(usize, @intCast(msg.lParam))),
+                    win32.RID_INPUT,
+                    &input,
+                    &size,
+                    @sizeOf(win32.RAWINPUTHEADER),
+                )) catch return error.GetRawInputData;
+
+                if (input.header.dwType == @intFromEnum(win32.RIM_TYPEMOUSE)) {
+                    const mouse = input.data.mouse;
+
+                    if (pointer.movement == .position) {
+                        pointer.movement = .{ .relative = .{
+                            .dx = @floatFromInt(mouse.lLastX),
+                            .dy = @floatFromInt(mouse.lLastY),
+                        } };
+                    } else {
+                        pointer.movement.relative.dx += @floatFromInt(mouse.lLastX);
+                        pointer.movement.relative.dy += @floatFromInt(mouse.lLastY);
+                    }
+                }
             },
             win32.WM_RBUTTONDOWN, win32.WM_MBUTTONDOWN, win32.WM_LBUTTONDOWN, win32.WM_XBUTTONDOWN, win32.WM_RBUTTONUP, win32.WM_MBUTTONUP, win32.WM_LBUTTONUP, win32.WM_XBUTTONUP => {
                 const b = &pointer.*.buttons;
@@ -137,6 +182,7 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                     else => unreachable,
                 }
             },
+
             win32.WM_KEYDOWN, win32.WM_KEYUP => {
                 const key = Window.Keyboard.fromWin32(msg.wParam, msg.lParam) orelse continue;
 
@@ -253,16 +299,50 @@ pub fn setFullscreen(self: *Win32, _: *Window, enabled: bool) !void {
     }
 }
 
-pub fn setPointerConstraint(self: *Win32, window: *Window, constraint: Window.Pointer.Constraint) !void {
-    _ = self;
-    _ = window;
-    _ = constraint;
+pub fn setPointerVisible(self: *Win32, _: *Window, visible: bool) void {
+    if (self.pointer_visible == visible)
+        return;
+
+    self.pointer_visible = visible;
+
+    if (visible) {
+        while (win32.ShowCursor(win32.TRUE) < 0) {}
+    } else {
+        while (win32.ShowCursor(win32.FALSE) >= 0) {}
+    }
 }
 
-pub fn setPointerRelative(self: *Win32, window: *Window, enabled: bool) !void {
-    _ = self;
-    _ = window;
-    _ = enabled;
+pub fn setPointerConstraint(self: *Win32, _: *Window, constraint: Window.Pointer.Constraint) !void {
+    self.pointer_constraint = constraint;
+    switch (constraint) {
+        .none => {
+            check(win32.ClipCursor(null)) catch return error.ClipCursor;
+        },
+        .locked, .confined => {
+            var rect: win32.RECT = undefined;
+
+            check(win32.GetClientRect(@ptrCast(self.hwnd), &rect)) catch return error.GetClientRectangle;
+
+            var top_left = win32.POINT{
+                .x = rect.left,
+                .y = rect.top,
+            };
+
+            check(win32.ClientToScreen(@ptrCast(self.hwnd), &top_left)) catch return error.ClientToScreen;
+
+            rect.left = top_left.x;
+            rect.top = top_left.y;
+
+            rect.right = top_left.x + (rect.right - rect.left);
+            rect.bottom = top_left.y + (rect.bottom - rect.top);
+
+            check(win32.ClipCursor(&rect)) catch return error.ClipCursor;
+        },
+    }
+}
+
+pub fn setPointerRelative(self: *Win32, _: *Window, enabled: bool) !void {
+    self.relative_pointer = enabled;
 }
 
 fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {

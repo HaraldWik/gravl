@@ -18,6 +18,7 @@ compositor: *wl.Compositor,
 wm_base: *xdg.WmBase,
 seat: *wl.Seat,
 decoration_manager: ?*zxdg.DecorationManagerV1 = null,
+cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
 pointer_constraints: ?*zwp.PointerConstraintsV1 = null,
 relative_pointer_manager: ?*zwp.RelativePointerManagerV1 = null,
 
@@ -40,10 +41,12 @@ surface: *wl.Surface,
 xdg_surface: *xdg.Surface,
 toplevel: *xdg.Toplevel,
 toplevel_decoration: ?*zxdg.ToplevelDecorationV1 = null,
+cursor_shape_device: ?*wp.CursorShapeDeviceV1 = null,
 pointer_constraint: PointerConstraint = .none,
 relative_pointer: ?*zwp.RelativePointerV1 = null,
 
 decoration_mode: zxdg.ToplevelDecorationV1.Mode = .client_side,
+pointer_visible: bool = true,
 
 poll_options: *const Window.PollOptions = &.{},
 
@@ -71,6 +74,7 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     const wm_base = registry_data.xdg_wm_base.?;
     const seat = registry_data.seat.?;
     const decoration_manager = registry_data.zxdg_decoration_manager;
+    const cursor_shape_manager = registry_data.wp_cursor_shape_manager;
     const pointer_constraints = registry_data.zwp_pointer_constraints;
     const relative_pointer_manager = registry_data.zwp_relative_pointer_manager;
 
@@ -109,6 +113,7 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
         .wm_base = wm_base,
         .seat = seat,
         .decoration_manager = decoration_manager,
+        .cursor_shape_manager = cursor_shape_manager,
         .pointer_constraints = pointer_constraints,
         .relative_pointer_manager = relative_pointer_manager,
 
@@ -126,6 +131,7 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
 pub fn close(self: *Wayland, window: *Window) void {
     _ = window;
 
+    if (self.cursor_shape_device) |cursor_shape_device| cursor_shape_device.destroy();
     if (self.pointer) |pointer| pointer.destroy();
     if (self.keyboard) |keyboard| keyboard.destroy();
     if (self.xkb.state) |state| state.unref();
@@ -197,6 +203,17 @@ pub fn setFullscreen(self: *Wayland, _: *Window, enabled: bool) !void {
         self.toplevel.unsetFullscreen();
 }
 
+pub fn setPointerVisible(self: *Wayland, _: *Window, visible: bool) !void {
+    const pointer = self.pointer orelse return;
+
+    self.pointer_visible = visible;
+    const cursor_shape_manager = self.cursor_shape_manager orelse return;
+
+    if (visible and self.cursor_shape_device == null) {
+        self.cursor_shape_device = try cursor_shape_manager.getPointer(pointer);
+    }
+}
+
 pub fn setPointerConstraint(self: *Wayland, window: *Window, constraint: Window.Pointer.Constraint) !void {
     _ = window;
 
@@ -251,8 +268,8 @@ const RegistryData = struct {
     compositor: ?*wl.Compositor = null,
     xdg_wm_base: ?*xdg.WmBase = null,
     seat: ?*wl.Seat = null,
-    wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
     zxdg_decoration_manager: ?*zxdg.DecorationManagerV1 = null,
+    wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
     zwp_pointer_constraints: ?*zwp.PointerConstraintsV1 = null,
     zwp_relative_pointer_manager: ?*zwp.RelativePointerManagerV1 = null,
 
@@ -296,10 +313,22 @@ fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, self: *Wayland) void {
     }
 }
 
-fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland) void {
+fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland) void {
     const window = self.window;
     switch (event) {
-        .enter => {},
+        .enter => |enter| {
+            if (self.pointer_visible) {
+                const cursor_shape_device = self.cursor_shape_device orelse return;
+                cursor_shape_device.setShape(enter.serial, .default);
+            } else {
+                pointer.setCursor(
+                    enter.serial,
+                    null,
+                    0,
+                    0,
+                );
+            }
+        },
         .leave => {},
         .motion => |motion| {
             window.pointer.movement = .{ .position = .{
@@ -308,7 +337,7 @@ fn pointerListener(_: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland) void
             } };
         },
         .button => |button| {
-            const buttons = &window.*.pointer.buttons;
+            const buttons = &window.pointer.buttons;
             const state = button.state == .pressed;
             switch (button.button) {
                 0x110 => buttons.left = state,
