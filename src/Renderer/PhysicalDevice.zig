@@ -8,6 +8,7 @@ const Surface = @import("Surface.zig");
 
 handle: vk.PhysicalDevice,
 properties: vk.PhysicalDeviceProperties,
+memory_properties: vk.PhysicalDeviceMemoryProperties,
 graphics_queue_family_index: u32,
 
 pub const PickError =
@@ -27,6 +28,7 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
 
     for (physical_devices) |physical_device| {
         const properties = instance.proxy.getPhysicalDeviceProperties(physical_device);
+        const memory_properties = instance.proxy.getPhysicalDeviceMemoryProperties(physical_device);
 
         const families = try instance.proxy.getPhysicalDeviceQueueFamilyPropertiesAlloc(physical_device, gpa);
         defer gpa.free(families);
@@ -55,6 +57,7 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
             best = .{
                 .handle = physical_device,
                 .properties = properties,
+                .memory_properties = memory_properties,
                 .graphics_queue_family_index = queue_family,
             };
         }

@@ -6,6 +6,28 @@ const Renderer = @import("Renderer.zig");
 
 const real_engine = @import("real_engine");
 
+const vertices: []const Vertex = &.{
+    .{ .position = .{ -0.5, -0.5, 0.0 }, .color = .{ 1.0, 0.0, 0.0 } },
+    .{ .position = .{ 0.5, -0.5, 0.0 }, .color = .{ 0.0, 1.0, 0.0 } },
+    .{ .position = .{ 0.5, 0.5, 0.0 }, .color = .{ 0.0, 0.0, 1.0 } },
+    .{ .position = .{ -0.5, 0.5, 0.0 }, .color = .{ 1.0, 1.0, 0.0 } },
+};
+
+const indices: []const u32 = &.{
+    // Triangle 1
+    0, 1, 2,
+
+    // Triangle 2
+    2, 3, 0,
+};
+
+const Vertex = extern struct {
+    position: [3]f32,
+    color: [3]f32,
+};
+
+const DefaultMesh = Renderer.Mesh(&.{Vertex}, u32);
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
@@ -28,8 +50,8 @@ pub fn main(init: std.process.Init) !void {
         .app_id = game.id,
         .title = game.name,
         .size = .{
-            .width = 300,
-            .height = 300,
+            .width = 1600,
+            .height = 900,
         },
     });
     defer window.close();
@@ -90,9 +112,8 @@ pub fn main(init: std.process.Init) !void {
     // });
     // defer pipeline.deinit(renderer.gpa, renderer.device);
 
-    try window.setFullscreen(true);
-
-    var fullscreen: bool = true;
+    const mesh: DefaultMesh = try .init(renderer, .{ .vertices = .{vertices}, .indices = indices });
+    defer mesh.deinit(renderer);
 
     while (!window.should_close) {
         try window.poll(.{});
@@ -115,17 +136,13 @@ pub fn main(init: std.process.Init) !void {
             renderer.bindShader(vertex2);
         }
 
-        if (window.keyboard.isDown(.escape)) {
-            fullscreen = !fullscreen;
-            try window.setFullscreen(fullscreen);
-        }
-
-        renderer.draw();
+        mesh.bind(renderer);
+        mesh.draw(renderer);
 
         try renderer.submit(window.size);
         try renderer.resize(window.size);
 
-        std.debug.print("{f}", .{window.keyboard});
+        // std.debug.print("{f}", .{window.keyboard});
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
     }

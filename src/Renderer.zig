@@ -427,8 +427,168 @@ pub fn bindShader(self: Renderer, shader_object: ShaderObject) void {
     );
 }
 
-pub fn draw(self: Renderer) void {
-    const device = self.device;
-    const frame = self.getFrame();
-    device.proxy.cmdDraw(frame.command_buffer, 3, 1, 0, 0);
+/// Creates a mesh type with compile-time generated vertex input layout.
+///
+/// `streams` defines the vertex buffer streams used by the mesh.
+/// Each stream becomes a Vulkan vertex binding and its fields become attributes.
+///
+/// `IndexType` defines the index buffer type (`u8`, `u16`, or `u32`).
+/// Use `null` for a non-indexed mesh.
+pub fn Mesh(comptime streams: []const type, opt_index_type: ?type) type {
+    const VertexData = init: {
+        var field_types: [streams.len]type = undefined;
+        for (&field_types, streams) |*t, VertexType| {
+            t.* = []const VertexType;
+        }
+        break :init @Tuple(&field_types);
+    };
+
+    const has_indices = if (opt_index_type) |IndexType| switch (IndexType) {
+        u8, u16, u32 => true,
+        else => @compileError(
+            "expected index type u8, u16, u32, or null, found " ++ @typeName(IndexType),
+        ),
+    } else false;
+
+    const IndexType = opt_index_type orelse u0;
+
+    return struct {
+        const Self = @This();
+
+        buffers: [streams.len]Buffer,
+        index_buffer: if (has_indices) Buffer else void,
+
+        count: u32, // vertex or index count
+
+        pub const bindings: [streams.len]vk.VertexInputBindingDescription2EXT = bindings: {
+            var descriptions: [streams.len]vk.VertexInputBindingDescription2EXT = undefined;
+            for (&descriptions, streams, 0..) |*description, VertexType, i| {
+                description.* = .{
+                    .binding = i,
+                    .stride = @sizeOf(VertexType),
+                    .input_rate = .vertex,
+                    .divisor = 1,
+                };
+            }
+
+            break :bindings descriptions;
+        };
+
+        const attribute_count = count: {
+            var count: usize = 0;
+            for (streams) |VertexType| count += std.meta.fields(VertexType).len;
+            break :count count;
+        };
+
+        pub const attributes: [attribute_count]vk.VertexInputAttributeDescription2EXT = attributes: {
+            var descriptions: [attribute_count]vk.VertexInputAttributeDescription2EXT = undefined;
+
+            var attribute_index: usize = 0;
+
+            for (streams, 0..) |VertexType, binding| {
+                for (std.meta.fields(VertexType)) |field| {
+                    descriptions[attribute_index] = .{
+                        .location = attribute_index,
+                        .binding = binding,
+                        .format = formatOf(field.type),
+                        .offset = @offsetOf(VertexType, field.name),
+                    };
+
+                    attribute_index += 1;
+                }
+            }
+            break :attributes descriptions;
+        };
+
+        pub const InitOptions = struct {
+            vertices: VertexData,
+            indices: []const IndexType = &.{},
+        };
+
+        pub fn init(renderer: Renderer, options: InitOptions) !Self {
+            var buffers: [streams.len]Buffer = undefined;
+            inline for (streams, 0..) |T, i| {
+                buffers[i] = try .init(T, renderer.gpa, renderer.physical_device, renderer.device, .vertex, options.vertices[i]);
+            }
+
+            const index_buffer = if (has_indices) try Buffer.init(IndexType, renderer.gpa, renderer.physical_device, renderer.device, .index, options.indices) else void{};
+
+            const count: u32 = @truncate(if (has_indices) options.indices.len else options.vertices[0].len);
+
+            return .{ .buffers = buffers, .index_buffer = index_buffer, .count = count };
+        }
+
+        pub fn deinit(self: Self, renderer: Renderer) void {
+            if (has_indices) self.index_buffer.deinit(renderer.gpa, renderer.device);
+            for (self.buffers) |buffer| buffer.deinit(renderer.gpa, renderer.device);
+        }
+
+        pub fn bind(self: Self, renderer: Renderer) void {
+            const frame = renderer.getFrame();
+            renderer.device.proxy.cmdSetVertexInputEXT(
+                frame.command_buffer,
+                bindings[0..],
+                attributes[0..],
+            );
+
+            var handles: [streams.len]vk.Buffer = undefined;
+            for (&handles, self.buffers) |*handle, buffer| {
+                handle.* = buffer.handle;
+            }
+
+            const offsets: [streams.len]vk.DeviceSize = @splat(0);
+
+            renderer.device.proxy.cmdBindVertexBuffers(
+                frame.command_buffer,
+                0,
+                &handles,
+                &offsets,
+            );
+
+            if (has_indices) renderer.device.proxy.cmdBindIndexBuffer(
+                frame.command_buffer,
+                self.index_buffer.handle,
+                0,
+                switch (IndexType) {
+                    u8 => .uint8,
+                    u16 => .uint16,
+                    u32 => .uint32,
+                    else => unreachable,
+                },
+            );
+        }
+
+        pub fn draw(self: Self, renderer: Renderer) void {
+            const frame = renderer.getFrame();
+            if (has_indices) {
+                renderer.device.proxy.cmdDrawIndexed(frame.command_buffer, self.count, 1, 0, 0, 0);
+            } else {
+                renderer.device.proxy.cmdDraw(frame.command_buffer, self.count, 1, 0, 0);
+            }
+        }
+
+        fn formatOf(comptime T: type) vk.Format {
+            return switch (@typeInfo(T)) {
+                .float => switch (@bitSizeOf(T)) {
+                    32 => .r32_sfloat,
+                    64 => .r64_sfloat,
+                    else => @compileError("unsupported float size"),
+                },
+                .array => |array| {
+                    if (array.child != f32) {
+                        @compileError("unly f32 arrays are supported");
+                    }
+
+                    return switch (array.len) {
+                        2 => .r32g32_sfloat,
+                        3 => .r32g32b32_sfloat,
+                        4 => .r32g32b32a32_sfloat,
+                        else => @compileError("unsupported vector size"),
+                    };
+                },
+
+                else => @compileError("unsupported vertex attribute type"),
+            };
+        }
+    };
 }

@@ -81,8 +81,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    if (target.result.os.tag != .windows) {
-        exe.root_module.addImport("xkbcommon", xkbcommon);
+    switch (target.result.os.tag) {
+        .linux, .freebsd, .netbsd, .openbsd => exe.root_module.addImport("xkbcommon", xkbcommon),
+        else => {},
     }
 
     b.installArtifact(exe);
