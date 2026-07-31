@@ -28,6 +28,10 @@ const Vertex = extern struct {
 
 const DefaultMesh = Renderer.Mesh(&.{Vertex}, u32);
 
+const PushConstants = extern struct {
+    offset: [3]f32,
+};
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
@@ -55,6 +59,8 @@ pub fn main(init: std.process.Init) !void {
         },
     });
     defer window.close();
+    try window.setPointerConstraint(.locked);
+    try window.setPointerRelative(true);
 
     var renderer: Renderer = try .init(gpa, &window);
     defer renderer.deinit();
@@ -86,54 +92,58 @@ pub fn main(init: std.process.Init) !void {
     const vertex2_source = try shaders.readFileAlloc(io, "main2.vert.spv", gpa, .unlimited);
     defer gpa.free(vertex2_source);
 
-    const vertex: Renderer.ShaderObject = try .init(renderer.gpa, renderer.device, .{
-        .stage = .vertex,
-        .next_stage = .fragment,
-        .source = vertex_source,
-    });
-    defer vertex.deinit(renderer.gpa, renderer.device);
+    const push_constants: Renderer.PushConstants(PushConstants) = try .init(renderer);
+    defer push_constants.deinit(renderer);
 
-    const fragment: Renderer.ShaderObject = try .init(renderer.gpa, renderer.device, .{
-        .stage = .fragment,
-        .source = fragment_source,
-    });
-    defer fragment.deinit(renderer.gpa, renderer.device);
+    const vertex: Renderer.Shader(.vertex) = try .initFromSliceWithPushConstants(renderer, vertex_source, .{}, push_constants);
+    defer vertex.deinit(renderer);
 
-    const vertex2: Renderer.ShaderObject = try .init(renderer.gpa, renderer.device, .{
-        .stage = .vertex,
-        .next_stage = .fragment,
-        .source = vertex2_source,
-    });
-    defer vertex2.deinit(renderer.gpa, renderer.device);
+    const fragment: Renderer.Shader(.fragment) = try .initFromSliceWithPushConstants(renderer, fragment_source, .{}, push_constants);
+    defer fragment.deinit(renderer);
 
-    // const pipeline: Renderer.Pipeline = try .init(renderer.gpa, renderer.device, renderer.swapchain, .{
-    //     .fragment_source = fragment_source,
-    //     .vertex_source = vertex_source,
-    // });
-    // defer pipeline.deinit(renderer.gpa, renderer.device);
+    const vertex2: Renderer.Shader(.vertex) = try .initFromSliceWithPushConstants(renderer, vertex2_source, .{}, push_constants);
+    defer vertex2.deinit(renderer);
 
     const mesh: DefaultMesh = try .init(renderer, .{ .vertices = .{vertices}, .indices = indices });
     defer mesh.deinit(renderer);
 
+    var push: PushConstants = .{ .offset = @splat(0) };
+
     while (!window.should_close) {
         try window.poll(.{});
-        _ = try io.sleep(.fromMicroseconds(16), .real);
+        _ = try io.sleep(.fromMilliseconds(8), .real);
 
         const delta_time = getDeltaTime(io);
         const fps = 1.0 / delta_time;
 
-        try io.sleep(.fromMilliseconds(1), .real);
-
         try renderer.acquire(window.size);
+        renderer.bindDefaultState();
 
-        renderer.bindShader(fragment);
-        renderer.bindShader(vertex);
-        renderer.bindShader(.{ .handle = .null_handle, .stage = .geometry });
-        renderer.bindShader(.{ .handle = .null_handle, .stage = .tessellation_control });
-        renderer.bindShader(.{ .handle = .null_handle, .stage = .tessellation_evaluation });
+        const speed = 2.0;
+
+        if (window.keyboard.isDown(.escape)) window.should_close = true;
+
+        if (window.keyboard.isDown(.a)) {
+            push.offset[0] -= delta_time * speed;
+        }
+        if (window.keyboard.isDown(.d)) {
+            push.offset[0] += delta_time * speed;
+        }
+        if (window.keyboard.isDown(.s)) {
+            push.offset[1] += delta_time * speed;
+        }
+        if (window.keyboard.isDown(.w)) {
+            push.offset[1] -= delta_time * speed;
+        }
+
+        push_constants.push(renderer, push);
+
+        vertex.bind(renderer);
+        fragment.bind(renderer);
 
         if (window.keyboard.isDown(.space)) {
-            renderer.bindShader(vertex2);
+            // vertex2.bind(renderer);
+            renderer.setPolygonMode(.{ .line = .{ .width = 1.2 } });
         }
 
         mesh.bind(renderer);
@@ -145,6 +155,16 @@ pub fn main(init: std.process.Init) !void {
         // std.debug.print("{f}", .{window.keyboard});
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
+
+        switch (window.pointer.movement) {
+            .position => |pos| {
+                if (pos.x + pos.y > 0)
+                    std.log.info("{any}", .{pos});
+            },
+            .relative => |relative| {
+                std.log.debug("dx: {d} dy: {d}", .{ relative.dx, relative.dy });
+            },
+        }
     }
 }
 

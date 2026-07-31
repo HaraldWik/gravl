@@ -26,16 +26,20 @@ pub fn build(b: *std.Build) void {
     scanner.addCustomProtocol(wayland_protocols.path("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"));
     scanner.addCustomProtocol(wayland_protocols.path("staging/cursor-shape/cursor-shape-v1.xml"));
     scanner.addCustomProtocol(wayland_protocols.path("unstable/tablet/tablet-unstable-v2.xml"));
+    scanner.addCustomProtocol(wayland_protocols.path("unstable/pointer-constraints/pointer-constraints-unstable-v1.xml"));
+    scanner.addCustomProtocol(wayland_protocols.path("unstable/relative-pointer/relative-pointer-unstable-v1.xml"));
 
     scanner.generate("wl_compositor", 1);
     scanner.generate("wl_output", 4);
     scanner.generate("wl_shm", 1);
     scanner.generate("wl_seat", 4);
+    scanner.generate("wl_data_device_manager", 3);
     scanner.generate("xdg_wm_base", 3);
-    // scanner.generate("xdg_activation_v1", 1);
-    scanner.generate("zxdg_decoration_manager_v1", 1);
     scanner.generate("wp_cursor_shape_manager_v1", 2);
+    scanner.generate("zxdg_decoration_manager_v1", 1);
     scanner.generate("zwp_tablet_manager_v2", 1);
+    scanner.generate("zwp_pointer_constraints_v1", 1);
+    scanner.generate("zwp_relative_pointer_manager_v1", 1);
 
     const xcb = b.dependency("xcb", .{ .target = target, .optimize = optimize }).module("xcb");
 

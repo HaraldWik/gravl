@@ -23,9 +23,12 @@ pub const Description = struct {
     next_stage: Stage = .none,
     source: []const u8,
     entry_name: [*:0]const u8 = "main",
+    push_constant_ranges: []const vk.PushConstantRange = &.{},
 };
 
-pub fn init(gpa: std.mem.Allocator, device: Device, description: Description) !ShaderObject {
+pub const InitError = vk.DeviceProxy.CreateShadersEXTError;
+
+pub fn init(gpa: std.mem.Allocator, device: Device, description: Description) InitError!ShaderObject {
     const magic = std.mem.readInt(u32, @ptrCast(std.mem.bytesAsSlice(u32, description.source[0..4])), .little);
     std.debug.assert(magic == 0x7230203);
 
@@ -36,6 +39,8 @@ pub fn init(gpa: std.mem.Allocator, device: Device, description: Description) !S
         .code_size = description.source.len,
         .p_code = @ptrCast(description.source.ptr),
         .p_name = description.entry_name,
+        .push_constant_range_count = @truncate(description.push_constant_ranges.len),
+        .p_push_constant_ranges = description.push_constant_ranges.ptr,
     };
 
     var handle: vk.ShaderEXT = undefined;
@@ -46,7 +51,7 @@ pub fn init(gpa: std.mem.Allocator, device: Device, description: Description) !S
     };
 }
 
-pub fn initMany(comptime count: usize, gpa: std.mem.Allocator, device: Device, descriptions: [count]Description) ![count]ShaderObject {
+pub fn initMany(comptime count: usize, gpa: std.mem.Allocator, device: Device, descriptions: [count]Description) InitError![count]ShaderObject {
     var create_infos: [count]vk.ShaderCreateInfoEXT = undefined;
     for (&create_infos, &descriptions) |*create_info, description| create_info.* = vk.ShaderCreateInfoEXT{
         .code_type = .spirv_ext,

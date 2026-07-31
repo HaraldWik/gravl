@@ -16,10 +16,8 @@ const PhysicalDevice = @import("Renderer/PhysicalDevice.zig");
 const Device = @import("Renderer/Device.zig");
 const Swapchain = @import("Renderer/Swapchain.zig");
 const CommandHandler = @import("Renderer/CommandHandler.zig");
+const ShaderObject = @import("Renderer/ShaderObject.zig");
 const Buffer = @import("Renderer/Buffer.zig");
-
-pub const Pipeline = @import("Renderer/Pipeline.zig");
-pub const ShaderObject = @import("Renderer/ShaderObject.zig");
 
 gpa_impl: *Allocator,
 gpa: std.mem.Allocator,
@@ -178,6 +176,32 @@ pub fn acquire(self: *Renderer, size: Window.Size) !void {
     try device.proxy.resetCommandBuffer(frame.command_buffer, .{});
 
     try self.command_handler.begin(self.device, swapchain.*);
+
+    device.proxy.cmdSetViewportWithCount(
+        frame.command_buffer,
+        &.{.{
+            .x = 0,
+            .y = 0,
+            .width = @floatFromInt(self.swapchain.extent.width),
+            .height = @floatFromInt(self.swapchain.extent.height),
+            .min_depth = 0.0,
+            .max_depth = 1.0,
+        }},
+    );
+
+    device.proxy.cmdSetScissorWithCount(
+        frame.command_buffer,
+        &.{.{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = self.swapchain.extent,
+        }},
+    );
+
+    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .vertex_bit = true }}, null);
+    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_control_bit = true }}, null);
+    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_evaluation_bit = true }}, null);
+    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .geometry_bit = true }}, null);
+    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .fragment_bit = true }}, null);
 }
 
 pub fn submit(self: *Renderer, size: Window.Size) !void {
@@ -242,74 +266,9 @@ pub fn resize(self: *Renderer, size: Window.Size) !void {
     );
 }
 
-pub fn bindPipeline(self: Renderer, pipeline: Pipeline) void {
+pub fn bindDefaultState(self: Renderer) void {
     const device = self.device;
     const frame = self.getFrame();
-    device.proxy.cmdBindPipeline(frame.command_buffer, .graphics, pipeline.handle);
-}
-
-// pub const ShaderBinding = struct {
-//     vertex: ShaderObject = .{ .handle = .null_handle, .stage = .vertex },
-//     tessellation_control: ShaderObject = .{ .handle = .null_handle, .stage = .tessellation_control },
-//     tessellation_evaluation: ShaderObject = .{ .handle = .null_handle, .stage = .tessellation_evaluation },
-//     geometry: ShaderObject = .{ .handle = .null_handle, .stage = .geometry },
-//     fragment: ShaderObject = .{ .handle = .null_handle, .stage = .fragment },
-// };
-
-pub fn bindShader(self: Renderer, shader_object: ShaderObject) void {
-    // const shader_count = std.meta.fields(ShaderBinding).len;
-
-    // var handles: [shader_count]vk.ShaderEXT = undefined;
-    // var stages: [shader_count]ShaderObject.Stage = undefined;
-
-    // inline for (std.meta.fields(ShaderBinding), 0..) |field, i| {
-    //     const shader: ShaderObject = @field(shader_binding, field.name);
-    //     handles[i] = shader.handle;
-    //     stages[i] = if (shader.handle != .null_handle) shader.stage else ShaderObject.Stage.none;
-    // }
-
-    const device = self.device;
-    const frame = self.getFrame();
-    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{@bitCast(@intFromEnum(shader_object.stage))}, &.{shader_object.handle});
-    // viewport
-    device.proxy.cmdSetViewportWithCount(
-        frame.command_buffer,
-        &.{.{
-            .x = 0,
-            .y = 0,
-            .width = @floatFromInt(self.swapchain.extent.width),
-            .height = @floatFromInt(self.swapchain.extent.height),
-            .min_depth = 0.0,
-            .max_depth = 1.0,
-        }},
-    );
-
-    // scissor
-    device.proxy.cmdSetScissorWithCount(
-        frame.command_buffer,
-        &.{.{
-            .offset = .{ .x = 0, .y = 0 },
-            .extent = self.swapchain.extent,
-        }},
-    );
-
-    // input assembly
-    device.proxy.cmdSetPrimitiveTopology(
-        frame.command_buffer,
-        .triangle_list,
-    );
-
-    device.proxy.cmdSetPrimitiveRestartEnable(
-        frame.command_buffer,
-        .false,
-    );
-
-    // vertex input (empty)
-    device.proxy.cmdSetVertexInputEXT(
-        frame.command_buffer,
-        null,
-        null,
-    );
 
     // rasterizer
     device.proxy.cmdSetRasterizerDiscardEnable(
@@ -427,6 +386,143 @@ pub fn bindShader(self: Renderer, shader_object: ShaderObject) void {
     );
 }
 
+pub const PolygonMode = union(vk.PolygonMode) {
+    fill,
+    line: struct {
+        width: f32 = 1.0,
+    },
+    point,
+    fill_rectangle_nv,
+};
+
+pub fn setPolygonMode(self: Renderer, mode: PolygonMode) void {
+    const frame = self.getFrame();
+    const mode_enum = std.meta.activeTag(mode);
+    self.device.proxy.cmdSetPolygonModeEXT(frame.command_buffer, mode_enum);
+
+    switch (mode) {
+        .line => |line| self.device.proxy.cmdSetLineWidth(frame.command_buffer, line.width),
+        else => {},
+    }
+}
+
+pub const ShaderStage = ShaderObject.Stage;
+
+pub fn Shader(stage: ShaderStage) type {
+    const default_next_stage: ShaderStage = switch (stage) {
+        .none => .none,
+        .vertex => .fragment,
+        .tessellation_control => .tessellation_evaluation,
+        .tessellation_evaluation => .geometry,
+        .geometry => .fragment,
+        .fragment => .none,
+        .compute => .none,
+    };
+
+    return struct {
+        const Self = @This();
+
+        object: ShaderObject,
+
+        pub const InitOptions = struct {
+            next_stage: ShaderStage = default_next_stage,
+            entry_name: [*:0]const u8 = "main",
+        };
+
+        pub const InitError = ShaderObject.InitError;
+
+        pub fn initFromSlice(renderer: Renderer, source: []const u8, options: InitOptions) InitError!Self {
+            const shader_object: ShaderObject = try .init(renderer.gpa, renderer.device, .{
+                .stage = stage,
+                .next_stage = options.next_stage,
+                .source = source,
+                .entry_name = options.entry_name,
+            });
+
+            return .{ .object = shader_object };
+        }
+
+        pub fn initFromSliceWithPushConstants(renderer: Renderer, source: []const u8, options: InitOptions, push_constants: anytype) InitError!Self {
+            const push_constant_range: vk.PushConstantRange = @field(push_constants, "push_constant_range");
+
+            const shader_object: ShaderObject = try .init(renderer.gpa, renderer.device, .{
+                .stage = stage,
+                .next_stage = options.next_stage,
+                .source = source,
+                .entry_name = options.entry_name,
+                .push_constant_ranges = &.{push_constant_range},
+            });
+
+            return .{ .object = shader_object };
+        }
+
+        pub fn deinit(self: Self, renderer: Renderer) void {
+            self.object.deinit(renderer.gpa, renderer.device);
+        }
+
+        pub fn bind(self: Self, renderer: Renderer) void {
+            const frame = renderer.getFrame();
+            renderer.device.proxy.cmdBindShadersEXT(
+                frame.command_buffer,
+                &.{@bitCast(@intFromEnum(stage))},
+                &.{self.object.handle},
+            );
+        }
+    };
+}
+
+pub fn PushConstants(comptime Value: type) type {
+    switch (@typeInfo(Value)) {
+        .@"struct" => |s| {
+            if (s.layout != .@"extern") @compileError("expected extern struct layout for push constants, found '" ++ @tagName(s.layout) ++ "' in '" ++ @typeName(Value) ++ "'");
+        },
+        else => |info| {
+            @compileError("expected extern struct for push constants, found '" ++ @tagName(info) ++ " in '" ++ @typeName(Value) ++ "'");
+        },
+    }
+
+    const push_constant_range: vk.PushConstantRange = .{
+        .stage_flags = .{ .vertex_bit = true },
+        .offset = 0,
+        .size = @sizeOf(Value),
+    };
+
+    return struct {
+        const Self = @This();
+
+        layout: vk.PipelineLayout,
+        comptime push_constant_range: vk.PushConstantRange = push_constant_range,
+
+        pub fn init(renderer: Renderer) !Self {
+            const layout_create_info = vk.PipelineLayoutCreateInfo{
+                .push_constant_range_count = 1,
+                .p_push_constant_ranges = @ptrCast(&push_constant_range),
+            };
+
+            const layout = try renderer.device.proxy.createPipelineLayout(&layout_create_info, @ptrCast(@alignCast(renderer.gpa.ptr)));
+
+            return .{ .layout = layout };
+        }
+
+        pub fn deinit(self: Self, renderer: Renderer) void {
+            renderer.device.proxy.destroyPipelineLayout(self.layout, @ptrCast(@alignCast(renderer.gpa.ptr)));
+        }
+
+        pub fn push(self: Self, renderer: Renderer, value: Value) void {
+            const frame = renderer.getFrame();
+
+            renderer.device.proxy.cmdPushConstants(
+                frame.command_buffer,
+                self.layout,
+                push_constant_range.stage_flags,
+                push_constant_range.offset,
+                push_constant_range.size,
+                &value,
+            );
+        }
+    };
+}
+
 /// Creates a mesh type with compile-time generated vertex input layout.
 ///
 /// `streams` defines the vertex buffer streams used by the mesh.
@@ -434,7 +530,7 @@ pub fn bindShader(self: Renderer, shader_object: ShaderObject) void {
 ///
 /// `IndexType` defines the index buffer type (`u8`, `u16`, or `u32`).
 /// Use `null` for a non-indexed mesh.
-pub fn Mesh(comptime streams: []const type, opt_index_type: ?type) type {
+pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
     const VertexData = init: {
         var field_types: [streams.len]type = undefined;
         for (&field_types, streams) |*t, VertexType| {
@@ -445,9 +541,7 @@ pub fn Mesh(comptime streams: []const type, opt_index_type: ?type) type {
 
     const has_indices = if (opt_index_type) |IndexType| switch (IndexType) {
         u8, u16, u32 => true,
-        else => @compileError(
-            "expected index type u8, u16, u32, or null, found " ++ @typeName(IndexType),
-        ),
+        else => @compileError("expected index type u8, u16, u32, or null, found " ++ @typeName(IndexType)),
     } else false;
 
     const IndexType = opt_index_type orelse u0;
@@ -459,6 +553,8 @@ pub fn Mesh(comptime streams: []const type, opt_index_type: ?type) type {
         index_buffer: if (has_indices) Buffer else void,
 
         count: u32, // vertex or index count
+        topology: Topology,
+        primitive_restart: bool,
 
         pub const bindings: [streams.len]vk.VertexInputBindingDescription2EXT = bindings: {
             var descriptions: [streams.len]vk.VertexInputBindingDescription2EXT = undefined;
@@ -500,25 +596,36 @@ pub fn Mesh(comptime streams: []const type, opt_index_type: ?type) type {
             break :attributes descriptions;
         };
 
-        pub const InitOptions = struct {
+        pub const Topology = vk.PrimitiveTopology;
+
+        pub const Description = struct {
             vertices: VertexData,
             indices: []const IndexType = &.{},
+            topology: Topology = .triangle_list,
+            primitive_restart: bool = false,
         };
 
-        pub fn init(renderer: Renderer, options: InitOptions) !Self {
+        pub fn init(renderer: Renderer, desc: Description) !Self {
             var buffers: [streams.len]Buffer = undefined;
             inline for (streams, 0..) |T, i| {
-                buffers[i] = try .init(T, renderer.gpa, renderer.physical_device, renderer.device, .vertex, options.vertices[i]);
+                buffers[i] = try .init(T, renderer.gpa, renderer.physical_device, renderer.device, .vertex, desc.vertices[i]);
             }
 
-            const index_buffer = if (has_indices) try Buffer.init(IndexType, renderer.gpa, renderer.physical_device, renderer.device, .index, options.indices) else void{};
+            const index_buffer = if (has_indices) try Buffer.init(IndexType, renderer.gpa, renderer.physical_device, renderer.device, .index, desc.indices) else void{};
 
-            const count: u32 = @truncate(if (has_indices) options.indices.len else options.vertices[0].len);
+            const count: u32 = @truncate(if (has_indices) desc.indices.len else desc.vertices[0].len);
 
-            return .{ .buffers = buffers, .index_buffer = index_buffer, .count = count };
+            return .{
+                .buffers = buffers,
+                .index_buffer = index_buffer,
+                .count = count,
+                .topology = desc.topology,
+                .primitive_restart = desc.primitive_restart,
+            };
         }
 
         pub fn deinit(self: Self, renderer: Renderer) void {
+            renderer.device.proxy.deviceWaitIdle() catch {};
             if (has_indices) self.index_buffer.deinit(renderer.gpa, renderer.device);
             for (self.buffers) |buffer| buffer.deinit(renderer.gpa, renderer.device);
         }
@@ -560,6 +667,17 @@ pub fn Mesh(comptime streams: []const type, opt_index_type: ?type) type {
 
         pub fn draw(self: Self, renderer: Renderer) void {
             const frame = renderer.getFrame();
+
+            renderer.device.proxy.cmdSetPrimitiveTopology(
+                frame.command_buffer,
+                self.topology,
+            );
+
+            renderer.device.proxy.cmdSetPrimitiveRestartEnable(
+                frame.command_buffer,
+                @enumFromInt(@intFromBool(self.primitive_restart)),
+            );
+
             if (has_indices) {
                 renderer.device.proxy.cmdDrawIndexed(frame.command_buffer, self.count, 1, 0, 0, 0);
             } else {

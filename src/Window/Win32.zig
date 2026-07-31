@@ -253,6 +253,18 @@ pub fn setFullscreen(self: *Win32, _: *Window, enabled: bool) !void {
     }
 }
 
+pub fn setPointerConstraint(self: *Win32, window: *Window, constraint: Window.Pointer.Constraint) !void {
+    _ = self;
+    _ = window;
+    _ = constraint;
+}
+
+pub fn setPointerRelative(self: *Win32, window: *Window, enabled: bool) !void {
+    _ = self;
+    _ = window;
+    _ = enabled;
+}
+
 fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {
     return switch (msg) {
         win32.WM_GETMINMAXINFO, win32.WM_SIZE, win32.WM_MOVE, win32.WM_SETFOCUS, win32.WM_KILLFOCUS, win32.WM_CLOSE => |wm| {

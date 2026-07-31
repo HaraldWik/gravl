@@ -8,6 +8,7 @@ const wl = @import("wayland").client.wl;
 const wp = @import("wayland").client.wp;
 const xdg = @import("wayland").client.xdg;
 const zxdg = @import("wayland").client.zxdg;
+const zwp = @import("wayland").client.zwp;
 const xkbcommon = @import("xkbcommon");
 
 window: *Window,
@@ -17,6 +18,8 @@ compositor: *wl.Compositor,
 wm_base: *xdg.WmBase,
 seat: *wl.Seat,
 decoration_manager: ?*zxdg.DecorationManagerV1 = null,
+pointer_constraints: ?*zwp.PointerConstraintsV1 = null,
+relative_pointer_manager: ?*zwp.RelativePointerManagerV1 = null,
 
 pointer: ?*wl.Pointer = null,
 keyboard: ?*wl.Keyboard = null,
@@ -37,10 +40,18 @@ surface: *wl.Surface,
 xdg_surface: *xdg.Surface,
 toplevel: *xdg.Toplevel,
 toplevel_decoration: ?*zxdg.ToplevelDecorationV1 = null,
+pointer_constraint: PointerConstraint = .none,
+relative_pointer: ?*zwp.RelativePointerV1 = null,
 
 decoration_mode: zxdg.ToplevelDecorationV1.Mode = .client_side,
 
 poll_options: *const Window.PollOptions = &.{},
+
+const PointerConstraint = union(enum) {
+    none: void,
+    locked: ?*zwp.LockedPointerV1,
+    confined: ?*zwp.ConfinedPointerV1,
+};
 
 pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void {
     try Loader.load();
@@ -60,6 +71,8 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     const wm_base = registry_data.xdg_wm_base.?;
     const seat = registry_data.seat.?;
     const decoration_manager = registry_data.zxdg_decoration_manager;
+    const pointer_constraints = registry_data.zwp_pointer_constraints;
+    const relative_pointer_manager = registry_data.zwp_relative_pointer_manager;
 
     wm_base.setListener(?*anyopaque, xdgWmBaseListener, null);
     seat.setListener(*Wayland, seatListener, self);
@@ -96,7 +109,11 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
         .wm_base = wm_base,
         .seat = seat,
         .decoration_manager = decoration_manager,
+        .pointer_constraints = pointer_constraints,
+        .relative_pointer_manager = relative_pointer_manager,
 
+        .pointer = self.pointer,
+        .keyboard = self.keyboard,
         .xkb = self.xkb,
 
         .surface = surface,
@@ -180,12 +197,64 @@ pub fn setFullscreen(self: *Wayland, _: *Window, enabled: bool) !void {
         self.toplevel.unsetFullscreen();
 }
 
+pub fn setPointerConstraint(self: *Wayland, window: *Window, constraint: Window.Pointer.Constraint) !void {
+    _ = window;
+
+    const pointer = self.pointer orelse return;
+    const pointer_constraints = self.pointer_constraints orelse return;
+
+    switch (self.pointer_constraint) {
+        .none => {},
+        .locked => |locked| if (locked) |p| p.destroy(),
+        .confined => |confined| if (confined) |p| p.destroy(),
+    }
+
+    switch (constraint) {
+        .none => self.pointer_constraint = .none,
+        .locked => {
+            const locked = try pointer_constraints.lockPointer(
+                self.surface,
+                pointer,
+                null,
+                .persistent,
+            );
+
+            self.pointer_constraint = .{ .locked = locked };
+        },
+        .confined => {
+            const confined = try pointer_constraints.confinePointer(
+                self.surface,
+                pointer,
+                null,
+                .persistent,
+            );
+
+            self.pointer_constraint = .{ .confined = confined };
+        },
+    }
+}
+
+pub fn setPointerRelative(self: *Wayland, window: *Window, enabled: bool) !void {
+    const pointer = self.pointer orelse return;
+    const relative_pointer_manager = self.relative_pointer_manager orelse return;
+
+    if (self.relative_pointer) |relative| relative.destroy();
+    if (!enabled) return;
+
+    const relative_pointer = try relative_pointer_manager.getRelativePointer(pointer);
+    relative_pointer.setListener(*Window, zwpRelativePointerListener, window);
+
+    self.relative_pointer = relative_pointer;
+}
+
 const RegistryData = struct {
     compositor: ?*wl.Compositor = null,
     xdg_wm_base: ?*xdg.WmBase = null,
     seat: ?*wl.Seat = null,
-    zxdg_decoration_manager: ?*zxdg.DecorationManagerV1 = null,
     wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
+    zxdg_decoration_manager: ?*zxdg.DecorationManagerV1 = null,
+    zwp_pointer_constraints: ?*zwp.PointerConstraintsV1 = null,
+    zwp_relative_pointer_manager: ?*zwp.RelativePointerManagerV1 = null,
 
     pub fn listener(registry: *wl.Registry, event: wl.Registry.Event, self: *RegistryData) void {
         switch (event) {
@@ -347,9 +416,7 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
             // Treat them as repeats instead of new key presses.
             if (key.time == 0) keyboard.previous.set(@intFromEnum(k));
         },
-        .repeat_info => |info| {
-            std.log.info("{any}", .{info});
-        },
+        .repeat_info => {},
     }
 }
 
@@ -397,6 +464,20 @@ fn xdgToplevelListener(_: *xdg.Toplevel, event: xdg.Toplevel.Event, self: *Wayla
 
 fn zxdgToplevelDecorationListener(_: *zxdg.ToplevelDecorationV1, event: zxdg.ToplevelDecorationV1.Event, self: *Wayland) void {
     self.decoration_mode = event.configure.mode;
+}
+
+fn zwpRelativePointerListener(_: *zwp.RelativePointerV1, event: zwp.RelativePointerV1.Event, window: *Window) void {
+    switch (event) {
+        .relative_motion => |motion| if (window.pointer.movement == .position) {
+            window.pointer.movement = .{ .relative = .{
+                .dx = motion.dx.toDouble(),
+                .dy = motion.dy.toDouble(),
+            } };
+        } else {
+            window.pointer.movement.relative.dx += motion.dx.toDouble();
+            window.pointer.movement.relative.dy += motion.dy.toDouble();
+        },
+    }
 }
 
 var loader: Loader = .{};

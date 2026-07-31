@@ -74,8 +74,8 @@ pub fn init(comptime T: type, gpa: std.mem.Allocator, physical_device: PhysicalD
 }
 
 pub fn deinit(self: Buffer, gpa: std.mem.Allocator, device: Device) void {
-    device.proxy.freeMemory(self.memory, @ptrCast(@alignCast(gpa.ptr)));
     device.proxy.destroyBuffer(self.handle, @ptrCast(@alignCast(gpa.ptr)));
+    device.proxy.freeMemory(self.memory, @ptrCast(@alignCast(gpa.ptr)));
 }
 
 fn findMemoryType(type_filter: u32, properties: vk.MemoryPropertyFlags, memory_properties: vk.PhysicalDeviceMemoryProperties) u32 {

@@ -131,6 +131,12 @@ pub const Pointer = struct {
         horizontal: f64 = 0,
         vertical: f64 = 0,
     };
+
+    pub const Constraint = enum {
+        none,
+        locked,
+        confined,
+    };
 };
 
 pub const Keyboard = @import("Window/Keyboard.zig");
@@ -205,6 +211,14 @@ pub fn restore(self: *Window) !void {
 
 pub fn setFullscreen(self: *Window, enabled: bool) !void {
     try self.call(.setFullscreen, .{enabled});
+}
+
+pub fn setPointerConstraint(self: *Window, constraint: Pointer.Constraint) !void {
+    try self.call(.setPointerConstraint, .{constraint});
+}
+
+pub fn setPointerRelative(self: *Window, enabled: bool) !void {
+    try self.call(.setPointerRelative, .{enabled});
 }
 
 fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {

@@ -45,3 +45,15 @@ pub fn setFullscreen(self: *Cocoa, window: *Window, enabled: bool) !void {
     _ = window;
     _ = enabled;
 }
+
+pub fn setPointerConstraint(self: *Cocoa, window: *Window, constraint: Window.Pointer.Constraint) !void {
+    _ = self;
+    _ = window;
+    _ = constraint;
+}
+
+pub fn setPointerRelative(self: *Cocoa, window: *Window, enabled: bool) !void {
+    _ = self;
+    _ = window;
+    _ = enabled;
+}
