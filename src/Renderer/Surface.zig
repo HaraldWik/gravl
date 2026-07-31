@@ -7,7 +7,7 @@ const vk = @import("vulkan");
 
 const Window = @import("../Window.zig");
 const Wayland = @import("../Window/Wayland.zig");
-const X = @import("../Window/X.zig");
+const Xlib = @import("../Window/Xlib.zig");
 const Win32 = @import("../Window/Win32.zig");
 const Cocoa = @import("../Window/Cocoa.zig");
 
@@ -31,7 +31,7 @@ pub fn init(gpa: std.mem.Allocator, instance: Instance, window: *Window) InitErr
     return switch (builtin.os.tag) {
         .linux, .freebsd, .netbsd, .openbsd => switch (window.inner) {
             .wayland => .initWayland(gpa, instance, &window.inner.wayland),
-            .x11 => .initX(gpa, instance, &window.inner.x11),
+            .x11 => .initXlib(gpa, instance, &window.inner.x11),
         },
         .windows => .initWin32(gpa, instance, &window.inner),
         .macos => .initCocoa(gpa, instance, &window.inner),
@@ -53,13 +53,13 @@ fn initWayland(gpa: std.mem.Allocator, instance: Instance, wayland: *Wayland) Wa
     return .{ .handle = handle };
 }
 
-fn initX(gpa: std.mem.Allocator, instance: Instance, x: *X) XError!Surface {
-    const create_info: *const vk.XcbSurfaceCreateInfoKHR = &.{
-        .connection = @ptrCast(x.connection),
-        .window = x.id.id,
+fn initXlib(gpa: std.mem.Allocator, instance: Instance, xlib: *Xlib) XError!Surface {
+    const create_info: *const vk.XlibSurfaceCreateInfoKHR = &.{
+        .dpy = @ptrCast(xlib.display),
+        .window = xlib.id,
     };
 
-    const handle = try instance.proxy.createXcbSurfaceKHR(create_info, @ptrCast(@alignCast(gpa.ptr)));
+    const handle = try instance.proxy.createXlibSurfaceKHR(create_info, @ptrCast(@alignCast(gpa.ptr)));
     return .{ .handle = handle };
 }
 

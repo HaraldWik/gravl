@@ -42,8 +42,6 @@ pub fn build(b: *std.Build) void {
     scanner.generate("zwp_pointer_constraints_v1", 1);
     scanner.generate("zwp_relative_pointer_manager_v1", 1);
 
-    const xcb = b.dependency("xcb", .{ .target = target, .optimize = optimize }).module("xcb");
-
     const win32 = b.dependency("win32", .{}).module("win32");
 
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
@@ -74,7 +72,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "wayland", .module = wayland },
-                .{ .name = "xcb", .module = xcb },
                 .{ .name = "win32", .module = win32 },
 
                 .{ .name = "vulkan", .module = vulkan },

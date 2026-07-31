@@ -110,8 +110,11 @@ pub fn main(init: std.process.Init) !void {
 
     var push: PushConstants = .{ .offset = @splat(0) };
 
+    var buffer: [128]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+
     while (!window.should_close) {
-        try window.poll(.{});
+        try window.poll(.{ .text = &writer });
         _ = try io.sleep(.fromMilliseconds(8), .real);
 
         const delta_time = getDeltaTime(io);
@@ -156,6 +159,9 @@ pub fn main(init: std.process.Init) !void {
         // std.debug.print("{f}", .{window.keyboard});
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
+
+        std.debug.print("{s}", .{writer.buffered()});
+        _ = writer.consumeAll();
     }
 }
 

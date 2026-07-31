@@ -90,7 +90,7 @@ pub fn close(self: *Win32, window: *Window) void {
 }
 
 pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
-    const pointer = &window.*.pointer;
+    const pointer = &window.pointer;
     var msg: win32.MSG = undefined;
     while (win32.PeekMessageW(&msg, @ptrCast(self.hwnd), 0, 0, .{ .REMOVE = 1 }) == win32.TRUE) {
         _ = win32.TranslateMessage(&msg);
@@ -150,7 +150,7 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 }
             },
             win32.WM_RBUTTONDOWN, win32.WM_MBUTTONDOWN, win32.WM_LBUTTONDOWN, win32.WM_XBUTTONDOWN, win32.WM_RBUTTONUP, win32.WM_MBUTTONUP, win32.WM_LBUTTONUP, win32.WM_XBUTTONUP => {
-                const b = &pointer.*.buttons;
+                const b = &pointer.buttons;
                 switch (msg.message) {
                     win32.WM_RBUTTONDOWN => b.right = true,
                     win32.WM_MBUTTONDOWN => b.middle = true,
@@ -177,8 +177,8 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 const lines: f64 = @floatFromInt(@divTrunc(delta, @as(isize, @intCast(win32.WHEEL_DELTA))));
 
                 switch (msg.message) {
-                    win32.WM_MOUSEWHEEL => pointer.axis.vertical = lines,
-                    win32.WM_MOUSEHWHEEL => pointer.axis.horizontal = lines,
+                    win32.WM_MOUSEWHEEL => pointer.axis.vertical += lines,
+                    win32.WM_MOUSEHWHEEL => pointer.axis.horizontal += lines,
                     else => unreachable,
                 }
             },

@@ -352,8 +352,8 @@ fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, self: *Wayland
         },
         .axis => |axis| {
             switch (axis.axis) {
-                .vertical_scroll => window.pointer.axis.vertical = -axis.value.toDouble() / 10.0,
-                .horizontal_scroll => window.pointer.axis.horizontal = axis.value.toDouble() / 10.0,
+                .vertical_scroll => window.pointer.axis.vertical += -axis.value.toDouble() / 10.0,
+                .horizontal_scroll => window.pointer.axis.horizontal += axis.value.toDouble() / 10.0,
                 _ => unreachable,
             }
         },

@@ -60,7 +60,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
             },
             .x11 => &.{
                 vk.extensions.khr_surface.name,
-                vk.extensions.khr_xcb_surface.name,
+                vk.extensions.khr_xlib_surface.name,
             },
         },
         .windows => &.{

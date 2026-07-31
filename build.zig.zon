@@ -12,10 +12,6 @@
             .url = "git+https://gitlab.freedesktop.org/wayland/wayland-protocols#02e63e74a807afed95bc25a386173110afef24e3",
             .hash = "N-V-__8AAMCWEADA0AS-1LfBEtixZLJAb_XQKQpgSmR2uxAO",
         },
-        .xcb = .{
-            .url = "git+https://github.com/HaraldWik/xcb-zig#85fada06a6b62f63d767a088557e28566958d034",
-            .hash = "xcb-0.0.0-OuD1_3aACgCyUZe4fNIpe-A5a4pZrJOKCw_bhJW5JKay",
-        },
         .win32 = .{
             .url = "git+https://github.com/SquareMan/zigwin32#01df0ea99ae90afc3f46117055ab788646872eba",
             .hash = "zigwin32-25.0.28-preview-qYSj4tyL5APmYxQI4_nKfd431j6VtaZnQkOb9IY6o5TR",

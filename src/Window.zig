@@ -18,7 +18,7 @@ pub const empty: Window = undefined;
 pub const Inner = switch (native_os) {
     .linux, .freebsd, .netbsd, .openbsd => union(XdgSessionType) {
         wayland: @import("Window/Wayland.zig"),
-        x11: @import("Window/X.zig"),
+        x11: @import("Window/Xlib.zig"),
     },
     .windows => @import("Window/Win32.zig"),
     .macos => @import("Window/Cocoa.zig"),
@@ -31,6 +31,9 @@ pub const Inner = switch (native_os) {
         const maximize = @compileError("unsupported platform");
         const restore = @compileError("unsupported platform");
         const setFullscreen = @compileError("unsupported platform");
+        const setPointerVisible = @compileError("unsupported platform");
+        const setPointerConstraint = @compileError("unsupported platform");
+        const setPointerRelative = @compileError("unsupported platform");
     },
 };
 
