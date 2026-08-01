@@ -56,7 +56,7 @@ fn initWayland(gpa: std.mem.Allocator, instance: Instance, wayland: *Wayland) Wa
 fn initXlib(gpa: std.mem.Allocator, instance: Instance, xlib: *Xlib) XError!Surface {
     const create_info: *const vk.XlibSurfaceCreateInfoKHR = &.{
         .dpy = @ptrCast(xlib.display),
-        .window = xlib.id,
+        .window = xlib.handle.id,
     };
 
     const handle = try instance.proxy.createXlibSurfaceKHR(create_info, @ptrCast(@alignCast(gpa.ptr)));

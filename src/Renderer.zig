@@ -158,6 +158,8 @@ pub fn acquire(self: *Renderer, size: Window.Size) !void {
     const swapchain = &self.*.swapchain;
     const frame = self.getFrame();
 
+    try self.resize(size);
+
     _ = try device.proxy.waitForFences(&.{frame.in_flight_fence}, .true, std.math.maxInt(u64));
     try device.proxy.resetFences(&.{frame.in_flight_fence});
 

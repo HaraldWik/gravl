@@ -5,18 +5,31 @@ const std = @import("std");
 const Window = @import("../Window.zig");
 
 display: *xlib.Display,
-id: xlib.Window,
-wm_delete: xlib.Atom,
+handle: xlib.Window,
 
 /// X Input Method,
 xim: *xlib.XIM,
 /// X Input Context,
 xic: *xlib.XIC,
 
+atoms: Atoms,
+
+invisible_cursor: xlib.Cursor,
+
+pub const Atoms = struct {
+    WM_DELETE_WINDOW: xlib.Atom,
+
+    _NET_WM_NAME: xlib.Atom,
+    UTF8_STRING: xlib.Atom,
+
+    _NET_WM_STATE: xlib.Atom,
+    _NET_WM_STATE_MAXIMIZED_HORZ: xlib.Atom,
+    _NET_WM_STATE_MAXIMIZED_VERT: xlib.Atom,
+    _NET_WM_STATE_FULLSCREEN: xlib.Atom,
+};
+
 pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     try xlib.ProcTable.load();
-    _ = options;
-    _ = window;
 
     const display = xlib.procs.XOpenDisplay.?(null) orelse return error.OpenDisplay;
     errdefer _ = xlib.procs.XCloseDisplay.?(display);
@@ -24,7 +37,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     const screen = xlib.procs.XDefaultScreen.?(display);
     const root = xlib.procs.XRootWindow.?(display, screen);
 
-    const window_id = xlib.procs.XCreateSimpleWindow.?(
+    const window_handle = xlib.procs.XCreateSimpleWindow.?(
         display,
         root,
         100, // x
@@ -39,37 +52,23 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     const event_mask: xlib.Event.Mask = .{
         .exposure = true,
         .structure_notify = true,
+        .focus_change = true,
+
+        .pointer_motion = true,
+        .button_press = true,
+        .button_release = true,
 
         .key_press = true,
         .key_release = true,
-        .button_press = true,
-        .button_release = true,
-        .pointer_motion = true,
-        .enter_window = true,
-        .leave_window = true,
-        .focus_change = true,
     };
 
     _ = xlib.procs.XSelectInput.?(
         display,
-        window_id,
+        window_handle,
         event_mask,
     );
 
-    _ = xlib.procs.XMapWindow.?(display, window_id);
-
-    var wm_delete = xlib.procs.XInternAtom.?(
-        display,
-        "WM_DELETE_WINDOW",
-        xlib.FALSE,
-    );
-
-    _ = xlib.procs.XSetWMProtocols.?(
-        display,
-        window_id,
-        &wm_delete,
-        1,
-    );
+    _ = xlib.procs.XMapWindow.?(display, window_handle);
 
     const xim = xlib.procs.XOpenIM.?(
         display,
@@ -85,32 +84,69 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
         @as(c_ulong, xlib.XIM.PreeditNothing | xlib.XIM.StatusNothing),
 
         xlib.XN.ClientWindow,
-        @as(xlib.Window, window_id),
+        window_handle.id,
 
         xlib.XN.FocusWindow,
-        @as(xlib.Window, window_id),
+        window_handle.id,
 
         @as(?*anyopaque, null),
     ) orelse return error.CreateInputContext;
     errdefer _ = xlib.procs.XDestroyIC.?(self.xic);
 
-    _ = xlib.procs.XFlush.?(display);
+    var atoms: Atoms = undefined;
+    inline for (std.meta.fields(Atoms)) |field| {
+        @field(atoms, field.name) = xlib.procs.XInternAtom.?(display, field.name.ptr, xlib.FALSE);
+    }
+
+    _ = xlib.procs.XSetWMProtocols.?(
+        display,
+        window_handle,
+        &atoms.WM_DELETE_WINDOW,
+        1,
+    );
+
+    const data = [_]u8{0};
+    const empty_bitmap = xlib.procs.XCreateBitmapFromData.?(
+        display,
+        root,
+        @ptrCast(&data),
+        1,
+        1,
+    );
+    defer _ = xlib.procs.XFreePixmap.?(display, empty_bitmap);
+
+    var color = std.mem.zeroes(xlib.Color);
+
+    const invisible_cursor = xlib.procs.XCreatePixmapCursor.?(
+        display,
+        empty_bitmap,
+        empty_bitmap,
+        &color,
+        &color,
+        0,
+        0,
+    );
+    errdefer xlib.procs.XFreeCursor.?(display, invisible_cursor);
 
     self.* = .{
         .display = display,
-        .id = window_id,
-        .wm_delete = wm_delete,
+        .handle = window_handle,
         .xim = xim,
         .xic = xic,
+        .atoms = atoms,
+        .invisible_cursor = invisible_cursor,
     };
+
+    try self.setTitle(window, options.title);
 }
 
 pub fn close(self: *Xlib, _: *Window) void {
     const display = self.display;
 
+    _ = xlib.procs.XFreeCursor.?(display, self.invisible_cursor);
     _ = xlib.procs.XDestroyIC.?(self.xic);
     _ = xlib.procs.XCloseIM.?(self.xim);
-    _ = xlib.procs.XDestroyWindow.?(display, self.id);
+    _ = xlib.procs.XDestroyWindow.?(display, self.handle);
     _ = xlib.procs.XCloseDisplay.?(display);
 
     xlib.ProcTable.unload();
@@ -129,27 +165,34 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
         switch (event.type) {
             .client_message => {
                 const client = event.client;
-                if (client.data.l[0] == self.wm_delete) window.should_close = true;
+                if (client.data.l[0] == @intFromEnum(self.atoms.WM_DELETE_WINDOW)) window.should_close = true;
             },
 
             .expose => {
                 const expose = event.expose;
                 const size: Window.Size = .{ .width = @intCast(expose.width), .height = @intCast(expose.height) };
-                const position: Window.Position = .{ .x = @intCast(expose.x), .y = @intCast(expose.y) };
+
                 window.size = size;
-                window.position = position;
-                std.log.info("{any} {any}", .{ size, position });
+                std.log.info("expose: {any}", .{size});
             },
             .configure_notify => {
                 const configure = event.configure;
-                // const size: Window.Size = .{ .width = @intCast(configure.width), .height = @intCast(configure.height) };
+                const size: Window.Size = .{ .width = @intCast(configure.width), .height = @intCast(configure.height) };
                 const position: Window.Position = .{ .x = @intCast(configure.x), .y = @intCast(configure.y) };
-                // window.size = size;
+                window.size = size;
                 window.position = position;
+
+                std.log.info("configure: {any} {any}", .{ size, position });
             },
 
-            .focus_in => window.focused = true,
-            .focus_out => window.focused = false,
+            .focus_in => {
+                xlib.procs.XSetICFocus.?(self.xic);
+                window.focused = true;
+            },
+            .focus_out => {
+                xlib.procs.XUnsetICFocus.?(self.xic);
+                window.focused = false;
+            },
 
             .motion_notify => {
                 const motion = event.motion;
@@ -192,7 +235,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 const writer = options.text orelse continue;
 
                 var buffer: [128]u8 = undefined;
-                var status: xlib.Status = .none;
+                var lookup: xlib.Lookup = .none;
 
                 const len = xlib.procs.Xutf8LookupString.?(
                     self.xic,
@@ -200,67 +243,181 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                     &buffer,
                     buffer.len,
                     &keysym,
-                    &status,
+                    &lookup,
                 );
 
-                if (len > 0) {
-                    const text = buffer[0..@intCast(len)];
-                    try writer.writeAll(text);
-                }
+                if (len > 0) switch (lookup) {
+                    .chars, .both => {
+                        const text = buffer[0..@intCast(len)];
+                        for (text) |c| {
+                            // filter control characters
+                            if (std.ascii.isControl(c)) continue;
+
+                            try writer.writeByte(c);
+                        }
+                    },
+                    else => {},
+                };
             },
             .key_release => {
                 const keysym = xlib.procs.XLookupKeysym.?(&event.key, 0);
                 const key = Window.Keyboard.fromXkb(@enumFromInt(keysym)) orelse continue;
                 keyboard.release(key);
             },
-            else => std.log.info("{t}", .{event.type}),
+            else => {}, // std.log.info("{t}", .{event.type}),
         }
     }
 }
 
-pub fn setTitle(self: *Xlib, window: *Window, title: [:0]const u8) !void {
-    _ = self;
-    _ = window;
-    _ = title;
+pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
+    const display = self.display;
+
+    // Modern UTF-8 window title (_NET_WM_NAME)
+    _ = xlib.procs.XChangeProperty.?(
+        display,
+        self.handle,
+        self.atoms._NET_WM_NAME,
+        self.atoms.UTF8_STRING,
+        .@"8",
+        .replace,
+        title.ptr,
+        @intCast(title.len),
+    );
+
+    // Legacy ICCCM fallback (WM_NAME / XA_STRING)
+    _ = xlib.procs.XChangeProperty.?(
+        display,
+        self.handle,
+        .WM_NAME,
+        .STRING,
+        .@"8",
+        .replace,
+        title.ptr,
+        @intCast(title.len),
+    );
+
+    _ = xlib.procs.XFlush.?(display);
 }
 
-pub fn minimize(self: *Xlib, window: *Window) !void {
-    _ = self;
-    _ = window;
+pub fn minimize(self: *Xlib, _: *Window) !void {
+    const screen = xlib.procs.XDefaultScreen.?(self.display);
+
+    if (xlib.procs.XIconifyWindow.?(self.display, self.handle, screen) == 0) return error.IconifyWindow;
+
+    _ = xlib.procs.XFlush.?(self.display);
 }
 
-pub fn maximize(self: *Xlib, window: *Window) !void {
-    _ = self;
-    _ = window;
+pub fn maximize(self: *Xlib, _: *Window) !void {
+    self.setWmState(
+        self.atoms._NET_WM_STATE_MAXIMIZED_HORZ,
+        self.atoms._NET_WM_STATE_MAXIMIZED_VERT,
+        1,
+    );
+
+    _ = xlib.procs.XFlush.?(self.display);
 }
 
-pub fn restore(self: *Xlib, window: *Window) !void {
-    _ = self;
-    _ = window;
+pub fn restore(self: *Xlib, _: *Window) !void {
+    self.setWmState(
+        self.atoms._NET_WM_STATE_MAXIMIZED_HORZ,
+        self.atoms._NET_WM_STATE_MAXIMIZED_VERT,
+        0,
+    );
+
+    _ = xlib.procs.XFlush.?(self.display);
 }
 
-pub fn setFullscreen(self: *Xlib, window: *Window, enabled: bool) !void {
-    _ = self;
-    _ = window;
-    _ = enabled;
+pub fn setFullscreen(self: *Xlib, _: *Window, enabled: bool) !void {
+    self.setWmState(self.atoms._NET_WM_STATE_FULLSCREEN, .NONE, @intFromBool(enabled));
+
+    _ = xlib.procs.XFlush.?(self.display);
 }
 
-pub fn setPointerVisible(self: *Xlib, window: *Window, visible: bool) !void {
-    _ = self;
-    _ = window;
-    _ = visible;
+pub fn setPointerVisible(self: *Xlib, _: *Window, visible: bool) !void {
+    if (visible)
+        _ = xlib.procs.XUndefineCursor.?(
+            self.display,
+            self.handle,
+        )
+    else
+        _ = xlib.procs.XDefineCursor.?(
+            self.display,
+            self.handle,
+            self.invisible_cursor,
+        );
+
+    _ = xlib.procs.XFlush.?(self.display);
 }
 
-pub fn setPointerConstraint(self: *Xlib, window: *Window, constraint: Window.Pointer.Constraint) !void {
-    _ = self;
-    _ = window;
-    _ = constraint;
-}
+pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.Constraint) !void {
+    switch (constraint) {
+        .none => {
+            _ = xlib.procs.XUngrabPointer.?(self.display, .current);
+        },
+        .locked, .confined => {
+            _ = xlib.procs.XGrabPointer.?(
+                self.display,
+                self.handle,
+                xlib.TRUE,
+                .{
+                    .pointer_motion = true,
+                    .button_press = true,
+                    .button_release = true,
+                },
+                .async,
+                .async,
+                self.handle,
+                .none, // cursor
+                .current,
+            );
+        },
+    }
 
+    _ = xlib.procs.XFlush.?(self.display);
+}
 pub fn setPointerRelative(self: *Xlib, window: *Window, enabled: bool) !void {
     _ = self;
     _ = window;
     _ = enabled;
+}
+
+fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long) void {
+    var event: xlib.Event = .{
+        .client = .{
+            .type = @intFromEnum(xlib.Event.Type.client_message),
+            .serial = 0,
+            .send_event = xlib.TRUE,
+            .display = self.display,
+            .window = self.handle,
+            .message_type = self.atoms._NET_WM_STATE,
+            .format = 32,
+            .data = .{
+                .l = .{
+                    action, // 0 remove, 1 add, 2 toggle
+                    @intCast(@intFromEnum(state1)),
+                    @intCast(@intFromEnum(state2)),
+                    1, // source indication: application
+                    0,
+                },
+            },
+        },
+    };
+
+    const root = xlib.procs.XRootWindow.?(
+        self.display,
+        xlib.procs.XDefaultScreen.?(self.display),
+    );
+
+    _ = xlib.procs.XSendEvent.?(
+        self.display,
+        root,
+        xlib.FALSE,
+        .{
+            .substructure_redirect = true,
+            .substructure_notify = true,
+        },
+        &event,
+    );
 }
 
 const xlib = struct {
@@ -271,14 +428,113 @@ const xlib = struct {
     };
     pub const XrmDatabase = opaque {};
     pub const XIC = opaque {};
-    pub const Window = c_ulong;
-    pub const Atom = c_ulong;
-    pub const Time = c_ulong;
+
+    const Xid = packed struct(c_ulong) {
+        id: c_ulong,
+
+        pub const none: Xid = .{ .id = 0 };
+    };
+    pub const Window = Xid;
+    pub const Drawable = Xid;
+    pub const Time = enum(c_ulong) {
+        current = 0,
+        _,
+    };
+    pub const Pixmap = Xid;
+    pub const Cursor = Xid;
     pub const KeySym = c_ulong;
 
     pub const Bool = c_int;
     pub const TRUE: Bool = 1;
     pub const FALSE: Bool = 0;
+
+    pub const Atom = enum(c_ulong) {
+        NONE = 0,
+
+        PRIMARY = 1,
+        SECONDARY = 2,
+
+        ARC = 3,
+        ATOM = 4,
+        BITMAP = 5,
+        CARDINAL = 6,
+        COLORMAP = 7,
+        CURSOR = 8,
+        CUT_BUFFER0 = 9,
+        CUT_BUFFER1 = 10,
+        CUT_BUFFER2 = 11,
+        CUT_BUFFER3 = 12,
+        CUT_BUFFER4 = 13,
+        CUT_BUFFER5 = 14,
+        CUT_BUFFER6 = 15,
+        CUT_BUFFER7 = 16,
+        DRAWABLE = 17,
+        FONT = 18,
+        INTEGER = 19,
+        PIXMAP = 20,
+        POINT = 21,
+        RECTANGLE = 22,
+        RESOURCE_MANAGER = 23,
+        RGB_COLOR_MAP = 24,
+        RGB_BEST_MAP = 25,
+        RGB_BLUE_MAP = 26,
+        RGB_DEFAULT_MAP = 27,
+        RGB_GRAY_MAP = 28,
+        RGB_GREEN_MAP = 29,
+        RGB_RED_MAP = 30,
+        STRING = 31,
+        VISUALID = 32,
+        WINDOW = 33,
+        WM_COMMAND = 34,
+        WM_HINTS = 35,
+        WM_CLIENT_MACHINE = 36,
+        WM_ICON_NAME = 37,
+        WM_ICON_SIZE = 38,
+        WM_NAME = 39,
+        WM_NORMAL_HINTS = 40,
+        WM_SIZE_HINTS = 41,
+        WM_ZOOM_HINTS = 42,
+        MIN_SPACE = 43,
+        NORM_SPACE = 44,
+        MAX_SPACE = 45,
+        END_SPACE = 46,
+        SUPERSCRIPT_X = 47,
+        SUPERSCRIPT_Y = 48,
+        SUBSCRIPT_X = 49,
+        SUBSCRIPT_Y = 50,
+        UNDERLINE_POSITION = 51,
+        UNDERLINE_THICKNESS = 52,
+        STRIKEOUT_ASCENT = 53,
+        STRIKEOUT_DESCENT = 54,
+        ITALIC_ANGLE = 55,
+        X_HEIGHT = 56,
+        QUAD_WIDTH = 57,
+        WEIGHT = 58,
+        POINT_SIZE = 59,
+        RESOLUTION = 60,
+        COPYRIGHT = 61,
+        NOTICE = 62,
+        FONT_NAME = 63,
+        FAMILY_NAME = 64,
+        FULL_NAME = 65,
+        CAP_HEIGHT = 66,
+        WM_CLASS = 67,
+        WM_TRANSIENT_FOR = 68,
+        _,
+    };
+
+    pub const GrabMode = enum(c_int) {
+        sync = 0,
+        async = 1,
+    };
+
+    pub const GrabStatus = enum(c_int) {
+        success = 0,
+        already_grabbed = 1,
+        invalid_time = 2,
+        not_viewable = 3,
+        frozen = 4,
+    };
 
     pub const XN = struct {
         pub const InputStyle = "inputStyle";
@@ -286,12 +542,33 @@ const xlib = struct {
         pub const FocusWindow = "focusWindow";
     };
 
-    pub const Status = enum(c_int) {
-        none = 0,
-        chars = 1,
-        keysym = 2,
-        both = 3,
-        _,
+    pub const Lookup = enum(c_int) {
+        none = 1,
+        chars = 2,
+        keysym = 3,
+        both = 4,
+        overflow = -1,
+    };
+
+    pub const PropertyMode = enum(c_int) {
+        replace = 0,
+        prepend = 1,
+        append = 2,
+    };
+
+    pub const PropertyFormat = enum(c_int) {
+        @"8" = 8,
+        @"16" = 16,
+        @"32" = 32,
+    };
+
+    pub const Color = extern struct {
+        pixel: c_ulong = 0,
+        red: u16 = 0,
+        green: u16 = 0,
+        blue: u16 = 0,
+        flags: u8 = 0,
+        pad: u8 = 0,
     };
 
     pub const ComposeStatus = extern struct {
@@ -552,79 +829,161 @@ const xlib = struct {
         XCloseDisplay: ?*const fn (*Display) callconv(.c) c_int,
 
         XDefaultScreen: ?*const fn (*Display) callconv(.c) c_int,
-        XRootWindow: ?*const fn (*Display, c_int) callconv(.c) xlib.Window,
+        XRootWindow: ?*const fn (*Display, screen: c_int) callconv(.c) xlib.Window,
 
         XCreateSimpleWindow: ?*const fn (
             *Display,
-            xlib.Window,
-            c_int,
-            c_int,
-            c_uint,
-            c_uint,
-            c_uint,
-            c_ulong,
-            c_ulong,
+            parent: xlib.Window,
+            x: c_int,
+            y: c_int,
+            width: c_uint,
+            height: c_uint,
+            border_width: c_uint,
+            border: c_ulong,
+            background: c_ulong,
         ) callconv(.c) xlib.Window,
 
-        XDestroyWindow: ?*const fn (*Display, xlib.Window) callconv(.c) c_int,
+        XDestroyWindow: ?*const fn (*Display, window: xlib.Window) callconv(.c) c_int,
 
-        XMapWindow: ?*const fn (*Display, xlib.Window) callconv(.c) c_int,
-        XUnmapWindow: ?*const fn (*Display, xlib.Window) callconv(.c) c_int,
+        XMapWindow: ?*const fn (*Display, window: xlib.Window) callconv(.c) c_int,
+        XUnmapWindow: ?*const fn (*Display, window: xlib.Window) callconv(.c) c_int,
 
-        XSelectInput: ?*const fn (*Display, xlib.Window, Event.Mask) callconv(.c) c_int,
+        XSelectInput: ?*const fn (*Display, window: xlib.Window, event_mask: Event.Mask) callconv(.c) c_int,
 
-        XNextEvent: ?*const fn (*Display, *Event) callconv(.c) c_int,
+        XChangeProperty: ?*const fn (
+            *Display,
+            window: xlib.Window,
+            property: Atom,
+            type: Atom,
+            format: PropertyFormat,
+            mode: PropertyMode,
+            data: [*]const u8,
+            nelements: c_int,
+        ) callconv(.c) c_int,
+
+        XIconifyWindow: ?*const fn (*Display, window: xlib.Window, screen_number: c_int) callconv(.c) c_int,
+
+        XNextEvent: ?*const fn (*Display, event_return: *Event) callconv(.c) c_int,
         XPending: ?*const fn (*Display) callconv(.c) c_int,
 
+        XSendEvent: ?*const fn (
+            *Display,
+            destination: xlib.Window,
+            propagate: Bool,
+            event_mask: xlib.Event.Mask,
+            event_send: *xlib.Event,
+        ) callconv(.c) c_int,
+
         XFlush: ?*const fn (*Display) callconv(.c) c_int,
-        XSync: ?*const fn (*Display, Bool) callconv(.c) c_int,
+        XSync: ?*const fn (*Display, discard: Bool) callconv(.c) c_int,
 
-        XInternAtom: ?*const fn (*Display, [*:0]const u8, Bool) callconv(.c) Atom,
+        XInternAtom: ?*const fn (
+            *Display,
+            atom_name: [*:0]const u8,
+            only_if_exists: Bool,
+        ) callconv(.c) Atom,
 
-        XSetWMProtocols: ?*const fn (*Display, xlib.Window, *Atom, c_int) callconv(.c) c_int,
+        XSetWMProtocols: ?*const fn (
+            *Display,
+            window: xlib.Window,
+            protocols: *Atom,
+            count: c_int,
+        ) callconv(.c) c_int,
 
-        XLookupKeysym: ?*const fn (*Event.Key, c_int) callconv(.c) KeySym,
+        XLookupKeysym: ?*const fn (event_key: *Event.Key, index: c_int) callconv(.c) KeySym,
 
-        XOpenIM: ?*const fn (*Display, ?*XrmDatabase, ?[*:0]const u8, ?[*:0]const u8) callconv(.c) ?*XIM,
-        XCloseIM: ?*const fn (*XIM) callconv(.c) Bool,
-        XCreateIC: ?*const fn (*XIM, ...) callconv(.c) ?*XIC,
-        XDestroyIC: ?*const fn (*XIC) callconv(.c) void,
-        Xutf8LookupString: ?*const fn (*XIC, *Event.Key, [*]u8, c_int, *KeySym, *Status) callconv(.c) c_int,
+        XOpenIM: ?*const fn (
+            *Display,
+            db: ?*XrmDatabase,
+            res_name: ?[*:0]const u8,
+            res_class: ?[*:0]const u8,
+        ) callconv(.c) ?*XIM,
+        XCloseIM: ?*const fn (im: *XIM) callconv(.c) Bool,
+
+        XCreateIC: ?*const fn (im: *XIM, ...) callconv(.c) ?*XIC,
+        XDestroyIC: ?*const fn (ic: *XIC) callconv(.c) void,
+        XSetICFocus: ?*const fn (ic: *XIC) callconv(.c) void,
+        XUnsetICFocus: ?*const fn (ic: *XIC) callconv(.c) void,
+        Xutf8LookupString: ?*const fn (
+            ic: *XIC,
+            event: *Event.Key,
+            buffer: [*]u8,
+            bytes_buffer: c_int,
+            keysym: *KeySym,
+            status: *Lookup,
+        ) callconv(.c) c_int,
+
+        XCreateBitmapFromData: ?*const fn (
+            *Display,
+            drawable: xlib.Window,
+            data: [*]const u8,
+            width: c_uint,
+            height: c_uint,
+        ) callconv(.c) xlib.Pixmap,
+
+        XCreatePixmap: ?*const fn (
+            *Display,
+            drawable: Drawable,
+            width: c_uint,
+            height: c_uint,
+            depth: c_uint,
+        ) callconv(.c) xlib.Pixmap,
+
+        XFreePixmap: ?*const fn (*Display, pixmap: xlib.Pixmap) callconv(.c) c_int,
+
+        XCreatePixmapCursor: ?*const fn (
+            *Display,
+            source: Pixmap,
+            mask: Pixmap,
+            foreground_color: *Color,
+            background_color: *Color,
+            x: c_uint,
+            y: c_uint,
+        ) callconv(.c) Cursor,
+
+        XFreeCursor: ?*const fn (*Display, cursor: Cursor) callconv(.c) void,
+
+        XDefineCursor: ?*const fn (*Display, window: xlib.Window, cursor: Cursor) callconv(.c) c_int,
+
+        XUndefineCursor: ?*const fn (*Display, window: xlib.Window) callconv(.c) c_int,
 
         XQueryPointer: ?*const fn (
             *Display,
-            xlib.Window,
-            *xlib.Window,
-            *xlib.Window,
-            *c_int,
-            *c_int,
-            *c_int,
-            *c_int,
-            *c_uint,
+            window: xlib.Window,
+            root_return: *xlib.Window,
+            child_return: *xlib.Window,
+            root_x_return: *c_int,
+            root_y_return: *c_int,
+            win_x_return: *c_int,
+            win_y_return: *c_int,
+            mask_return: *c_uint,
         ) callconv(.c) Bool,
 
         XWarpPointer: ?*const fn (
             *Display,
-            xlib.Window,
-            xlib.Window,
-            c_int,
-            c_int,
-            c_uint,
-            c_uint,
-            c_int,
-            c_int,
+            src_window: xlib.Window,
+            dest_window: xlib.Window,
+            src_x: c_int,
+            src_y: c_int,
+            src_width: c_uint,
+            src_height: c_uint,
+            dest_x: c_int,
+            dest_y: c_int,
         ) callconv(.c) c_int,
 
-        XDefineCursor: ?*const fn (
+        XGrabPointer: ?*const fn (
             *Display,
-            xlib.Window,
-            c_ulong,
-        ) callconv(.c) c_int,
+            grab_window: xlib.Window,
+            owner_events: Bool,
+            event_mask: Event.Mask,
+            pointer_mode: GrabMode,
+            keyboard_mode: GrabMode,
+            confine_to: xlib.Window,
+            cursor: xlib.Cursor,
+            time: Time,
+        ) callconv(.c) GrabStatus,
 
-        XUndefineCursor: ?*const fn (
-            *Display,
-            xlib.Window,
-        ) callconv(.c) c_int,
+        XUngrabPointer: ?*const fn (*Display, time: Time) callconv(.c) c_int,
 
         fn load() !void {
             procs.lib = try .openZ("libX11.so");

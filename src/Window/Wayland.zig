@@ -36,6 +36,7 @@ xkb: struct {
         group: u32 = 0,
     } = .{},
 },
+repeat_key: RepeatKey = .{},
 
 surface: *wl.Surface,
 xdg_surface: *xdg.Surface,
@@ -50,6 +51,41 @@ pointer_visible: bool = true,
 
 poll_options: *const Window.PollOptions = &.{},
 
+const RepeatKey = struct {
+    keysym: xkbcommon.Keysym = .NoSymbol,
+    buffer: [8]u8 = undefined,
+    text_len: usize = 0,
+
+    next_time_ms: u64 = 0,
+
+    info: @FieldType(wl.Keyboard.Event, "repeat_info") = .{
+        .rate = 0,
+        .delay = 0,
+    },
+
+    fn nowMs() u64 {
+        var ts: std.c.timespec = undefined;
+        _ = std.c.clock_gettime(.MONOTONIC, &ts);
+
+        return @as(u64, @intCast(ts.sec)) * 1000 +
+            @as(u64, @intCast(ts.nsec)) / 1_000_000;
+    }
+
+    pub fn scheduleInitial(self: *RepeatKey) void {
+        self.next_time_ms = nowMs() +
+            @as(u64, @intCast(self.info.delay));
+    }
+
+    pub fn scheduleNext(self: *RepeatKey) void {
+        const interval_ms = @max(1, 1000 / self.info.rate);
+        self.next_time_ms += interval_ms;
+    }
+
+    pub fn isDue(self: *const RepeatKey) bool {
+        return nowMs() >= self.next_time_ms;
+    }
+};
+
 const PointerConstraint = union(enum) {
     none: void,
     locked: ?*zwp.LockedPointerV1,
@@ -60,6 +96,7 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     try Loader.load();
 
     self.window = window;
+    self.repeat_key = .{};
 
     const display = try wl.Display.connect(null);
 
@@ -120,6 +157,7 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
         .pointer = self.pointer,
         .keyboard = self.keyboard,
         .xkb = self.xkb,
+        .repeat_key = self.repeat_key,
 
         .surface = surface,
         .xdg_surface = xdg_surface,
@@ -177,6 +215,27 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
     }
 
     if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
+
+    const writer = options.text orelse return;
+
+    if (self.repeat_key.keysym == .NoSymbol or self.repeat_key.text_len == 0 or self.repeat_key.info.rate <= 0) return;
+
+    const now_ms = RepeatKey.nowMs();
+    if (now_ms < self.repeat_key.next_time_ms) return;
+
+    const interval_ms = @max(
+        @as(u64, 1),
+        @as(u64, @intCast(@divTrunc(1000, self.repeat_key.info.rate))),
+    );
+
+    const count: usize = @intCast((now_ms - self.repeat_key.next_time_ms) / interval_ms + 1);
+
+    const text = self.repeat_key.buffer[0..self.repeat_key.text_len];
+
+    var data = [_][]const u8{text};
+    try writer.writeSplatAll(&data, count);
+
+    self.repeat_key.next_time_ms += @as(u64, count) * interval_ms;
 }
 
 pub fn setTitle(self: *Wayland, window: *Window, title: [:0]const u8) !void {
@@ -425,15 +484,33 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
         .key => |key| {
             if (xkb.state == null or xkb.keymap == null) return;
 
-            const symbol = xkb.state.?.keyGetOneSym(key.key + 8);
+            const keysym = xkb.state.?.keyGetOneSym(key.key + 8);
 
-            if (key.state == .pressed) if (self.poll_options.text) |writer| {
-                var buffer: [8]u8 = undefined;
-                const bytes = buffer[0..@intCast(symbol.toUTF8(&buffer, buffer.len))];
-                writer.writeAll(bytes) catch {};
+            if (self.poll_options.text) |writer| switch (key.state) {
+                .pressed => {
+                    var buffer: [8]u8 = undefined;
+                    const len: usize = @intCast(keysym.toUTF8(&buffer, buffer.len));
+
+                    if (len > 0) {
+                        writer.writeAll(buffer[0..len]) catch {};
+
+                        self.repeat_key.keysym = keysym;
+
+                        @memcpy(self.repeat_key.buffer[0..len], buffer[0..len]);
+                        self.repeat_key.text_len = len;
+                        self.repeat_key.scheduleInitial();
+                    }
+                },
+                .released => {
+                    if (self.repeat_key.keysym == keysym) {
+                        self.repeat_key.keysym = .NoSymbol;
+                        self.repeat_key.text_len = 0;
+                    }
+                },
+                _ => unreachable,
             };
 
-            const k = Window.Keyboard.fromXkb(symbol) orelse return;
+            const k = Window.Keyboard.fromXkb(keysym) orelse return;
 
             switch (key.state) {
                 .pressed => keyboard.press(k),
@@ -445,7 +522,9 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
             // Treat them as repeats instead of new key presses.
             if (key.time == 0) keyboard.previous.set(@intFromEnum(k));
         },
-        .repeat_info => {},
+        .repeat_info => |repeat_info| {
+            self.repeat_key.info = repeat_info;
+        },
     }
 }
 

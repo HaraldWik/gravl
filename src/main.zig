@@ -60,7 +60,7 @@ pub fn main(init: std.process.Init) !void {
     });
     defer window.close();
     try window.setPointerVisible(false);
-    try window.setPointerConstraint(.locked);
+    try window.setPointerConstraint(.confined);
     try window.setPointerRelative(true);
 
     var renderer: Renderer = try .init(gpa, &window);
@@ -110,8 +110,8 @@ pub fn main(init: std.process.Init) !void {
 
     var push: PushConstants = .{ .offset = @splat(0) };
 
-    var buffer: [128]u8 = undefined;
-    var writer: std.Io.Writer = .fixed(&buffer);
+    var buf: [128]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buf);
 
     while (!window.should_close) {
         try window.poll(.{ .text = &writer });
@@ -154,7 +154,6 @@ pub fn main(init: std.process.Init) !void {
         mesh.draw(renderer);
 
         try renderer.submit(window.size);
-        try renderer.resize(window.size);
 
         // std.debug.print("{f}", .{window.keyboard});
 
