@@ -7,6 +7,8 @@ handle: vk.Instance,
 wrapper: *vk.InstanceWrapper,
 proxy: vk.InstanceProxy,
 
+pub const api_version = vk.makeApiVersion(0, 1, 3, 0);
+
 pub const InitError =
     vk.BaseWrapper.CreateInstanceError ||
     vk.BaseWrapper.EnumerateInstanceVersionError ||
@@ -37,8 +39,6 @@ pub fn init(
     for (extensions, extension_available) |requested_extension, is_available| {
         if (!is_available) std.log.info("vulkan extension {s} is not present", .{requested_extension});
     }
-
-    const api_version = vk.makeApiVersion(0, 1, 4, 0);
 
     const application_info: *const vk.ApplicationInfo = &.{
         .p_application_name = null,

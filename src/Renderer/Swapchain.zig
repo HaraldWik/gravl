@@ -22,12 +22,7 @@ image_index: u32 = 0,
 format: vk.Format = undefined,
 extent: vk.Extent2D = undefined,
 
-graveyard: [graveyard_size]Zombie = .{
-    .{},
-    .{},
-    .{},
-    .{},
-},
+graveyard: [graveyard_size]Zombie = @splat(.{}),
 
 const frames_in_flight = 3;
 const graveyard_size = 4;
@@ -89,6 +84,7 @@ fn build(
 
     // TODO: fix
     const surface_format: vk.SurfaceFormatKHR = formats[0];
+
     // for (formats) |format| {
     //     if (format.format == .r8g8b8_srgb and
     //         format.color_space == .srgb_nonlinear_khr)

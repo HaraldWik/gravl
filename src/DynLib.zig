@@ -14,6 +14,10 @@ pub fn open(path: []const u8) !DynLib {
     return .{ .inner = try InnerType.open(path) };
 }
 
+pub fn openZ(path: [*:0]const u8) !DynLib {
+    return .{ .inner = try InnerType.openZ(path) };
+}
+
 pub fn close(self: *DynLib) void {
     self.inner.close();
 }
@@ -35,6 +39,10 @@ const WindowsDynLib = struct {
         buf[len] = 0;
         const handle = LoadLibraryW(buf[0..len :0].ptr) orelse return error.FileNotFound;
         return .{ .handle = handle };
+    }
+
+    fn openZ(path: [*:0]const u8) !WindowsDynLib {
+        return .open(std.mem.span(path));
     }
 
     fn close(self: *WindowsDynLib) void {

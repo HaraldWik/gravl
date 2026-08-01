@@ -1,3 +1,5 @@
+const native_os = @import("builtin").os.tag;
+
 const std = @import("std");
 const DynLib = @import("DynLib.zig");
 const Game = @import("Game.zig");
@@ -7,7 +9,7 @@ const Renderer = @import("Renderer.zig");
 const real_engine = @import("real_engine");
 
 const vertices: []const Vertex = &.{
-    .{ .position = .{ -0.5, -0.5, 0.0 }, .color = .{ 1.0, 0.0, 0.0 } },
+    .{ .position = .{ -0.5, -0.5, 0.0 }, .color = .{ 0.4, 0.4, 0.4 } },
     .{ .position = .{ 0.5, -0.5, 0.0 }, .color = .{ 0.0, 1.0, 0.0 } },
     .{ .position = .{ 0.5, 0.5, 0.0 }, .color = .{ 0.0, 0.0, 1.0 } },
     .{ .position = .{ -0.5, 0.5, 0.0 }, .color = .{ 1.0, 1.0, 0.0 } },
@@ -36,10 +38,21 @@ pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
 
-    var args = try init.minimal.args.iterateAllocator(init.arena.allocator());
-    _ = args.skip();
+    var args = try init.minimal.args.iterateAllocator(gpa);
+    defer args.deinit();
+    const bin_path = args.next().?;
 
-    var game_dynlib: DynLib = try .open(args.next() orelse "game");
+    var game_dynlib: DynLib = try .openZ(args.next() orelse absolute_path: {
+        const arena = init.arena.allocator();
+
+        const libgame = switch (native_os) {
+            .windows => "game.dll",
+            else => "libgame.so",
+        };
+
+        const path = try std.Io.Dir.cwd().realPathFileAlloc(io, try std.Io.Dir.path.join(arena, &.{ std.Io.Dir.path.dirname(bin_path) orelse ".", libgame }), arena);
+        break :absolute_path path;
+    });
     defer game_dynlib.close();
 
     const ffi_table: Game.ffi.Table = try .load(&game_dynlib);
@@ -110,11 +123,8 @@ pub fn main(init: std.process.Init) !void {
 
     var push: PushConstants = .{ .offset = @splat(0) };
 
-    var buf: [128]u8 = undefined;
-    var writer: std.Io.Writer = .fixed(&buf);
-
     while (!window.should_close) {
-        try window.poll(.{ .text = &writer });
+        try window.poll(.{});
         _ = try io.sleep(.fromMilliseconds(8), .awake);
 
         const delta_time = getDeltaTime(io);
@@ -158,9 +168,6 @@ pub fn main(init: std.process.Init) !void {
         // std.debug.print("{f}", .{window.keyboard});
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
-
-        std.debug.print("{s}", .{writer.buffered()});
-        _ = writer.consumeAll();
     }
 }
 

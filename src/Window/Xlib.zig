@@ -1072,11 +1072,14 @@ const xlib = struct {
         ) callconv(.c) GrabStatus,
         XUngrabPointer: ?*const fn (*Display, time: Time) callconv(.c) c_int,
 
-        fn load() std.DynLib.Error!void {
-            procs.lib = try .openZ("libX11.so");
+        fn load() !void {
+            procs.lib = std.DynLib.openZ("libX11.so") catch |err| return switch (err) {
+                error.FileNotFound => error.LibX11NotInstalled,
+                else => err,
+            };
 
             inline for (std.meta.fields(ProcTable)) |field| {
-                if (field.type == std.DynLib) continue;
+                if (field.type == @FieldType(ProcTable, "lib")) continue;
 
                 @field(procs, field.name) = procs.lib.lookup(std.meta.Child(field.type), field.name);
             }
@@ -1350,7 +1353,7 @@ const xi = struct {
 
     pub var procs: ProcTable = undefined;
     const ProcTable = struct {
-        lib: std.DynLib = undefined,
+        lib: ?std.DynLib = undefined,
 
         XIQueryVersion: ?*const fn (*xlib.Display, major_version: *c_int, minor_version: *c_int) callconv(.c) c_int,
         XIQueryDevice: ?*const fn (*xlib.Display, device_id: c_int, device_count: *c_int) callconv(.c) ?*DeviceInfo,
@@ -1358,17 +1361,23 @@ const xi = struct {
         XISelectEvents: ?*const fn (*xlib.Display, window: xlib.Window, masks: [*]Event.Mask, num_masks: c_int) callconv(.c) c_int,
 
         fn load() std.DynLib.Error!void {
-            procs.lib = try .open("libXi.so.6");
+            procs.lib = std.DynLib.open("libXi.so.6") catch |err| switch (err) {
+                error.FileNotFound => {
+                    procs = std.mem.zeroes(ProcTable);
+                    return;
+                },
+                else => return err,
+            };
 
             inline for (std.meta.fields(ProcTable)) |field| {
-                if (field.type == std.DynLib) continue;
+                if (field.type == @FieldType(ProcTable, "lib")) continue;
 
-                @field(procs, field.name) = procs.lib.lookup(std.meta.Child(field.type), field.name);
+                @field(procs, field.name) = procs.lib.?.lookup(std.meta.Child(field.type), field.name);
             }
         }
 
         fn unload() void {
-            procs.lib.close();
+            if (procs.lib) |*lib| lib.close();
         }
     };
 };
