@@ -5,6 +5,7 @@ const std = @import("std");
 const Window = @import("../Window.zig");
 
 display: *xlib.Display,
+xi_extension: ?xlib.ExtensionQuery,
 handle: xlib.Window,
 
 /// X Input Method,
@@ -15,6 +16,13 @@ xic: *xlib.XIC,
 atoms: Atoms,
 
 invisible_cursor: xlib.Cursor,
+pointer: struct {
+    is_relative: bool = false,
+    position: Position = .{},
+    previous_position: Position = .{},
+
+    const Position = @FieldType(Window.Pointer.Movement, "position");
+} = .{},
 
 pub const Atoms = struct {
     WM_DELETE_WINDOW: xlib.Atom,
@@ -30,6 +38,7 @@ pub const Atoms = struct {
 
 pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     try xlib.ProcTable.load();
+    try xi.ProcTable.load();
 
     const display = xlib.procs.XOpenDisplay.?(null) orelse return error.OpenDisplay;
     errdefer _ = xlib.procs.XCloseDisplay.?(display);
@@ -37,16 +46,35 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     const screen = xlib.procs.XDefaultScreen.?(display);
     const root = xlib.procs.XRootWindow.?(display, screen);
 
+    var xi_extension: ?xlib.ExtensionQuery = .{};
+    if (xlib.procs.XQueryExtension.?(
+        display,
+        xi.extension_name,
+        &xi_extension.?.opcode,
+        &xi_extension.?.first_event,
+        &xi_extension.?.first_error,
+    ) == 0) xi_extension = null;
+
+    if (xi_extension != null) {
+        var xi_version: xi.VersionQuery = .{ .major = 2, .minor = 0 };
+        const xi_enabled = if (xi.procs.XIQueryVersion) |XIQueryVersion|
+            XIQueryVersion(display, &xi_version.major, &xi_version.minor) == 0
+        else
+            false;
+
+        if (!xi_enabled) xi_extension = null;
+    }
+
     const window_handle = xlib.procs.XCreateSimpleWindow.?(
         display,
         root,
-        100, // x
-        100, // y
-        800, // width
-        600, // height
-        0, // border width
-        0, // border color
-        0, // background color
+        if (options.position) |position| position.x else 0,
+        if (options.position) |position| position.y else 0,
+        @truncate(options.size.width),
+        @truncate(options.size.height),
+        0,
+        0,
+        0,
     );
 
     const event_mask: xlib.Event.Mask = .{
@@ -54,7 +82,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
         .structure_notify = true,
         .focus_change = true,
 
-        .pointer_motion = true,
+        .pointer_motion = xi_extension == null, // use xinput motion instead
         .button_press = true,
         .button_release = true,
 
@@ -67,6 +95,23 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
         window_handle,
         event_mask,
     );
+
+    if (xi_extension != null) {
+        var mask = xi.Event.createMask(&.{
+            .motion,
+        });
+
+        var event_masks = [_]xi.Event.Mask{
+            .{
+                .device_id = @intFromEnum(xi.DeviceSelector.all_devices),
+                .mask_len = mask.len,
+                .mask = &mask,
+            },
+        };
+
+        const result = xi.procs.XISelectEvents.?(display, window_handle, &event_masks, @intCast(event_masks.len));
+        if (result != 0) return error.XInputSelectEvents;
+    }
 
     _ = xlib.procs.XMapWindow.?(display, window_handle);
 
@@ -130,6 +175,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
 
     self.* = .{
         .display = display,
+        .xi_extension = xi_extension,
         .handle = window_handle,
         .xim = xim,
         .xic = xic,
@@ -149,14 +195,26 @@ pub fn close(self: *Xlib, _: *Window) void {
     _ = xlib.procs.XDestroyWindow.?(display, self.handle);
     _ = xlib.procs.XCloseDisplay.?(display);
 
+    xi.ProcTable.unload();
     xlib.ProcTable.unload();
 }
 
 pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
     const display = self.display;
+    const xi_opcode = if (self.xi_extension) |ext| ext.opcode else 0;
 
     const pointer = &window.pointer;
     const keyboard = &window.keyboard;
+
+    self.pointer.previous_position = self.pointer.position;
+    defer pointer.movement = if (self.pointer.is_relative) .{
+        .relative = .{
+            .dx = self.pointer.position.x - self.pointer.previous_position.x,
+            .dy = self.pointer.position.y - self.pointer.previous_position.y,
+        },
+    } else .{
+        .position = self.pointer.position,
+    };
 
     while (xlib.procs.XPending.?(display) > 0) {
         var event: xlib.Event = undefined;
@@ -173,7 +231,6 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 const size: Window.Size = .{ .width = @intCast(expose.width), .height = @intCast(expose.height) };
 
                 window.size = size;
-                std.log.info("expose: {any}", .{size});
             },
             .configure_notify => {
                 const configure = event.configure;
@@ -181,8 +238,6 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 const position: Window.Position = .{ .x = @intCast(configure.x), .y = @intCast(configure.y) };
                 window.size = size;
                 window.position = position;
-
-                std.log.info("configure: {any} {any}", .{ size, position });
             },
 
             .focus_in => {
@@ -196,10 +251,11 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
 
             .motion_notify => {
                 const motion = event.motion;
-                pointer.movement = .{ .position = .{
+
+                self.pointer.position = .{
                     .x = @floatFromInt(motion.x),
                     .y = @floatFromInt(motion.y),
-                } };
+                };
             },
             .button_press, .button_release => {
                 const b = &pointer.buttons;
@@ -263,6 +319,21 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 const keysym = xlib.procs.XLookupKeysym.?(&event.key, 0);
                 const key = Window.Keyboard.fromXkb(@enumFromInt(keysym)) orelse continue;
                 keyboard.release(key);
+            },
+            .generic_event => if (event.generic.extension == xi_opcode) {
+                if (xlib.procs.XGetEventData.?(display, &event.generic) == 0) continue;
+                const xi_event: *xi.Event = @ptrCast(@alignCast(event.generic.data.?));
+
+                switch (@as(xi.Event.Type, @enumFromInt(event.generic.evtype))) {
+                    .motion => {
+                        const motion = xi_event.motion;
+                        self.pointer.position = .{
+                            .x = motion.event_x,
+                            .y = motion.event_y,
+                        };
+                    },
+                    else => {},
+                }
             },
             else => {}, // std.log.info("{t}", .{event.type}),
         }
@@ -375,10 +446,9 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
 
     _ = xlib.procs.XFlush.?(self.display);
 }
-pub fn setPointerRelative(self: *Xlib, window: *Window, enabled: bool) !void {
-    _ = self;
-    _ = window;
-    _ = enabled;
+
+pub fn setPointerRelative(self: *Xlib, _: *Window, enabled: bool) !void {
+    self.pointer.is_relative = enabled;
 }
 
 fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long) void {
@@ -523,6 +593,13 @@ const xlib = struct {
         _,
     };
 
+    // helper
+    pub const ExtensionQuery = struct {
+        opcode: c_int = 0,
+        first_event: c_int = 0,
+        first_error: c_int = 0,
+    };
+
     pub const GrabMode = enum(c_int) {
         sync = 0,
         async = 1,
@@ -590,6 +667,8 @@ const xlib = struct {
         destroy: DestroyWindow,
         map: Map,
         unmap: Unmap,
+        generic: Generic,
+        unknown: [192]u8,
 
         pub const Type = enum(c_int) {
             /// Not delivered through XNextEvent; X errors use XErrorEvent
@@ -661,6 +740,17 @@ const xlib = struct {
             owner_grab_button: bool = false,
 
             _: if (@bitSizeOf(c_ulong) == 32) u7 else u39 = 0,
+        };
+
+        pub const Generic = extern struct {
+            type: c_int,
+            serial: c_ulong,
+            send_event: Bool,
+            display: *Display,
+            extension: c_int,
+            evtype: c_int,
+            cookie: c_uint,
+            data: ?*anyopaque,
         };
 
         pub const Key = extern struct {
@@ -831,6 +921,14 @@ const xlib = struct {
         XDefaultScreen: ?*const fn (*Display) callconv(.c) c_int,
         XRootWindow: ?*const fn (*Display, screen: c_int) callconv(.c) xlib.Window,
 
+        XQueryExtension: ?*const fn (
+            display: *Display,
+            name: [*:0]const u8,
+            major_opcode_return: *c_int,
+            first_event_return: *c_int,
+            first_error_return: *c_int,
+        ) callconv(.c) Bool,
+
         XCreateSimpleWindow: ?*const fn (
             *Display,
             parent: xlib.Window,
@@ -865,13 +963,14 @@ const xlib = struct {
 
         XNextEvent: ?*const fn (*Display, event_return: *Event) callconv(.c) c_int,
         XPending: ?*const fn (*Display) callconv(.c) c_int,
-
+        XGetEventData: ?*const fn (*Display, cookie: *Event.Generic) callconv(.c) xlib.Bool,
+        XFreeEventData: ?*const fn (*Display, cookie: *Event.Generic) callconv(.c) void,
         XSendEvent: ?*const fn (
             *Display,
             destination: xlib.Window,
             propagate: Bool,
-            event_mask: xlib.Event.Mask,
-            event_send: *xlib.Event,
+            event_mask: Event.Mask,
+            event_send: *Event,
         ) callconv(.c) c_int,
 
         XFlush: ?*const fn (*Display) callconv(.c) c_int,
@@ -883,12 +982,7 @@ const xlib = struct {
             only_if_exists: Bool,
         ) callconv(.c) Atom,
 
-        XSetWMProtocols: ?*const fn (
-            *Display,
-            window: xlib.Window,
-            protocols: *Atom,
-            count: c_int,
-        ) callconv(.c) c_int,
+        XSetWMProtocols: ?*const fn (*Display, window: xlib.Window, protocols: *Atom, count: c_int) callconv(.c) c_int,
 
         XLookupKeysym: ?*const fn (event_key: *Event.Key, index: c_int) callconv(.c) KeySym,
 
@@ -920,7 +1014,6 @@ const xlib = struct {
             width: c_uint,
             height: c_uint,
         ) callconv(.c) xlib.Pixmap,
-
         XCreatePixmap: ?*const fn (
             *Display,
             drawable: Drawable,
@@ -928,7 +1021,6 @@ const xlib = struct {
             height: c_uint,
             depth: c_uint,
         ) callconv(.c) xlib.Pixmap,
-
         XFreePixmap: ?*const fn (*Display, pixmap: xlib.Pixmap) callconv(.c) c_int,
 
         XCreatePixmapCursor: ?*const fn (
@@ -940,11 +1032,9 @@ const xlib = struct {
             x: c_uint,
             y: c_uint,
         ) callconv(.c) Cursor,
-
         XFreeCursor: ?*const fn (*Display, cursor: Cursor) callconv(.c) void,
 
         XDefineCursor: ?*const fn (*Display, window: xlib.Window, cursor: Cursor) callconv(.c) c_int,
-
         XUndefineCursor: ?*const fn (*Display, window: xlib.Window) callconv(.c) c_int,
 
         XQueryPointer: ?*const fn (
@@ -958,7 +1048,6 @@ const xlib = struct {
             win_y_return: *c_int,
             mask_return: *c_uint,
         ) callconv(.c) Bool,
-
         XWarpPointer: ?*const fn (
             *Display,
             src_window: xlib.Window,
@@ -970,7 +1059,6 @@ const xlib = struct {
             dest_x: c_int,
             dest_y: c_int,
         ) callconv(.c) c_int,
-
         XGrabPointer: ?*const fn (
             *Display,
             grab_window: xlib.Window,
@@ -982,18 +1070,300 @@ const xlib = struct {
             cursor: xlib.Cursor,
             time: Time,
         ) callconv(.c) GrabStatus,
-
         XUngrabPointer: ?*const fn (*Display, time: Time) callconv(.c) c_int,
 
-        fn load() !void {
+        fn load() std.DynLib.Error!void {
             procs.lib = try .openZ("libX11.so");
 
             inline for (std.meta.fields(ProcTable)) |field| {
-                if (field.type == std.DynLib)
-                    continue;
+                if (field.type == std.DynLib) continue;
 
-                @field(procs, field.name) =
-                    procs.lib.lookup(field.type, field.name) orelse return error.MissingSymbol;
+                @field(procs, field.name) = procs.lib.lookup(std.meta.Child(field.type), field.name);
+            }
+        }
+
+        fn unload() void {
+            procs.lib.close();
+        }
+    };
+};
+
+/// Xinput (extension)
+const xi = struct {
+    pub const extension_name = "XInputExtension";
+
+    pub const DeviceSelector = enum(c_int) {
+        all_devices = 0,
+        all_master_devices = 1,
+    };
+
+    pub const DeviceUse = enum(c_int) {
+        master_pointer = 1,
+        master_keyboard = 2,
+        slave_pointer = 3,
+        slave_keyboard = 4,
+        floating_slave = 5,
+    };
+
+    pub const AnyClassInfo = extern struct {
+        type: c_int,
+        source_id: c_int,
+    };
+
+    pub const DeviceInfo = extern struct {
+        device_id: c_int,
+        name: [*:0]u8,
+        use: DeviceUse,
+        attachment: c_int,
+        enabled: xlib.Bool,
+        num_classes: c_int,
+        classes: [*]*AnyClassInfo,
+    };
+    // helper
+    pub const VersionQuery = struct {
+        major: c_int,
+        minor: c_int,
+    };
+
+    pub const ValuatorMask = extern struct {
+        mask_len: c_int,
+        mask: [*]u8,
+    };
+
+    pub const Event = extern union {
+        key: Key,
+        button: Button,
+        motion: Motion,
+        raw_key: RawKey,
+        raw_button: RawButton,
+        raw_motion: RawMotion,
+        focus: Focus,
+
+        unknown: [256]u8,
+
+        pub const Type = enum(c_int) {
+            device_changed = 1,
+            key_press = 2,
+            key_release = 3,
+            button_press = 4,
+            button_release = 5,
+            motion = 6,
+            enter = 7,
+            leave = 8,
+            focus_in = 9,
+            focus_out = 10,
+            hierarchy_changed = 11,
+            property_event = 12,
+            raw_key_press = 13,
+            raw_key_release = 14,
+            raw_button_press = 15,
+            raw_button_release = 16,
+            raw_motion = 17,
+            touch_begin = 18,
+            touch_update = 19,
+            touch_end = 20,
+            touch_ownership = 21,
+            raw_touch_begin = 22,
+            raw_touch_update = 23,
+            raw_touch_end = 24,
+            touch_cancel = 25,
+            touch_class = 26,
+            _,
+        };
+
+        pub const Mask = extern struct {
+            device_id: c_int,
+            mask_len: c_int,
+            mask: [*]u8,
+        };
+
+        pub const Key = extern struct {
+            type: c_int,
+            serial: c_ulong,
+            send_event: xlib.Bool,
+            display: *xlib.Display,
+            extension: c_int,
+            evtype: c_int,
+
+            time: xlib.Time,
+            device_id: c_int,
+            source_id: c_int,
+
+            detail: c_int,
+
+            root: xlib.Window,
+            event: xlib.Window,
+            child: xlib.Window,
+
+            root_x: f64,
+            root_y: f64,
+            event_x: f64,
+            event_y: f64,
+
+            valuators: ValuatorMask,
+        };
+
+        pub const Button = extern struct {
+            type: c_int,
+            serial: c_ulong,
+            send_event: xlib.Bool,
+            display: *xlib.Display,
+            extension: c_int,
+            evtype: c_int,
+
+            time: xlib.Time,
+            device_id: c_int,
+            source_id: c_int,
+
+            detail: c_int,
+
+            root: xlib.Window,
+            event: xlib.Window,
+            child: xlib.Window,
+
+            root_x: f64,
+            root_y: f64,
+            event_x: f64,
+            event_y: f64,
+
+            buttons: ValuatorMask,
+            valuators: ValuatorMask,
+        };
+
+        pub const Motion = extern struct {
+            type: c_int,
+            serial: c_ulong,
+            send_event: xlib.Bool,
+            display: *xlib.Display,
+            extension: c_int,
+            evtype: c_int,
+
+            time: xlib.Time,
+            device_id: c_int,
+            source_id: c_int,
+
+            detail: c_int,
+
+            root: xlib.Window,
+            event: xlib.Window,
+            child: xlib.Window,
+
+            root_x: f64,
+            root_y: f64,
+            event_x: f64,
+            event_y: f64,
+
+            buttons: ValuatorMask,
+            valuators: ValuatorMask,
+        };
+
+        pub const Focus = extern struct {
+            type: c_int,
+            serial: c_ulong,
+            send_event: xlib.Bool,
+            display: *xlib.Display,
+            extension: c_int,
+            evtype: c_int,
+
+            time: xlib.Time,
+            device_id: c_int,
+            source_id: c_int,
+            mode: c_int,
+            detail: c_int,
+        };
+
+        pub const RawButton = extern struct {
+            type: c_int,
+            serial: c_ulong,
+            send_event: xlib.Bool,
+            display: *xlib.Display,
+            extension: c_int,
+            evtype: c_int,
+
+            time: xlib.Time,
+            device_id: c_int,
+            source_id: c_int,
+            detail: c_int,
+            flags: c_int,
+
+            valuators: ValuatorMask,
+            raw_values: [*]f64,
+        };
+
+        pub const RawKey = extern struct {
+            type: c_int,
+            serial: c_ulong,
+            send_event: xlib.Bool,
+            display: *xlib.Display,
+            extension: c_int,
+            evtype: c_int,
+
+            time: xlib.Time,
+            device_id: c_int,
+            source_id: c_int,
+            detail: c_int,
+            flags: c_int,
+
+            valuators: ValuatorMask,
+            raw_values: [*]f64,
+        };
+
+        pub const RawMotion = extern struct {
+            type: c_int,
+            serial: c_ulong,
+            send_event: xlib.Bool,
+            display: *xlib.Display,
+            extension: c_int,
+            evtype: c_int,
+
+            time: xlib.Time,
+            device_id: c_int,
+            source_id: c_int,
+            detail: c_int,
+            flags: c_int,
+
+            valuators: ValuatorMask,
+            raw_values: [*]f64,
+        };
+
+        pub fn createMask(comptime events: []const Event.Type) [maskSize(events)]u8 {
+            var mask: [maskSize(events)]u8 = @splat(0);
+            for (events) |event| setMask(&mask, event);
+            return mask;
+        }
+
+        fn setMask(mask: []u8, event: Event.Type) void {
+            const value: usize = @intCast(@intFromEnum(event));
+            const byte = value / 8;
+
+            if (byte >= mask.len) return;
+
+            mask[byte] |= @as(u8, 1) << @intCast(value % 8);
+        }
+
+        fn maskSize(comptime events: []const Event.Type) usize {
+            var max: usize = 0;
+            for (events) |event| max = @max(max, @intFromEnum(event));
+            return (max / 8) + 1;
+        }
+    };
+
+    pub var procs: ProcTable = undefined;
+    const ProcTable = struct {
+        lib: std.DynLib = undefined,
+
+        XIQueryVersion: ?*const fn (*xlib.Display, major_version: *c_int, minor_version: *c_int) callconv(.c) c_int,
+        XIQueryDevice: ?*const fn (*xlib.Display, device_id: c_int, device_count: *c_int) callconv(.c) ?*DeviceInfo,
+        XIFreeDeviceInfo: ?*const fn (devices: *DeviceInfo) callconv(.c) void,
+        XISelectEvents: ?*const fn (*xlib.Display, window: xlib.Window, masks: [*]Event.Mask, num_masks: c_int) callconv(.c) c_int,
+
+        fn load() std.DynLib.Error!void {
+            procs.lib = try .open("libXi.so.6");
+
+            inline for (std.meta.fields(ProcTable)) |field| {
+                if (field.type == std.DynLib) continue;
+
+                @field(procs, field.name) = procs.lib.lookup(std.meta.Child(field.type), field.name);
             }
         }
 

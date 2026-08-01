@@ -54,8 +54,8 @@ pub fn main(init: std.process.Init) !void {
         .app_id = game.id,
         .title = game.name,
         .size = .{
-            .width = 1600,
-            .height = 900,
+            .width = 1200,
+            .height = 675,
         },
     });
     defer window.close();
@@ -115,7 +115,7 @@ pub fn main(init: std.process.Init) !void {
 
     while (!window.should_close) {
         try window.poll(.{ .text = &writer });
-        _ = try io.sleep(.fromMilliseconds(8), .real);
+        _ = try io.sleep(.fromMilliseconds(8), .awake);
 
         const delta_time = getDeltaTime(io);
         const fps = 1.0 / delta_time;
@@ -170,13 +170,14 @@ pub fn getDeltaTime(io: std.Io) f32 {
     };
 
     const now: std.Io.Timestamp = .now(io, .real);
-    const prev = static.previous orelse {
+
+    const previous = static.previous orelse {
         static.previous = now;
-        return getDeltaTime(io);
+        return 0.0;
     };
 
-    const dt_ns = prev.durationTo(now);
     static.previous = now;
 
-    return @as(f32, @floatFromInt(dt_ns.nanoseconds)) / 1_000_000_000.0;
+    const duration = previous.durationTo(now);
+    return @as(f32, @floatFromInt(duration.toMilliseconds())) / 1000.0;
 }
