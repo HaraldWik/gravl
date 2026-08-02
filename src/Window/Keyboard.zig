@@ -191,12 +191,12 @@ pub fn progress(self: *Keyboard) void {
 }
 
 pub fn format(self: Keyboard, w: *std.Io.Writer) std.Io.Writer.Error!void {
-    try self.formatState(w, .press);
-    try self.formatState(w, .repeat);
-    try self.formatState(w, .release);
+    if (try self.formatState(w, .press)) try w.writeByte('\n');
+    if (try self.formatState(w, .repeat)) try w.writeByte('\n');
+    if (try self.formatState(w, .release)) try w.writeByte('\n');
 }
 
-pub fn formatState(self: Keyboard, w: *std.Io.Writer, comptime state: Key.State) std.Io.Writer.Error!void {
+pub fn formatState(self: Keyboard, w: *std.Io.Writer, comptime state: Key.State) std.Io.Writer.Error!bool {
     var first = true;
     var any_found = false;
 
@@ -216,7 +216,7 @@ pub fn formatState(self: Keyboard, w: *std.Io.Writer, comptime state: Key.State)
         first = false;
     }
 
-    if (any_found) try w.writeAll("\n");
+    return any_found;
 }
 
 pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {

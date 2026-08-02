@@ -21,10 +21,11 @@ fullscreen_data: struct {
     rect: win32.RECT = std.mem.zeroes(win32.RECT),
 } = .{},
 
-// TODO: put in sub structure
-pointer_visible: bool = true,
-pointer_constraint: Window.Pointer.Constraint = .none,
-relative_pointer: bool = false,
+pointer: struct {
+    visible: bool = true,
+    constraint: Window.Pointer.Constraint = .none,
+    is_relative: bool = false,
+} = .{},
 
 pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Window.OpenOptions) anyerror!void {
     const hinstance: std.os.windows.HINSTANCE = @ptrCast(win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle);
@@ -108,8 +109,8 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
             },
             win32.WM_USER + win32.WM_SETFOCUS => {
                 window.focused = true;
-                if (!self.pointer_visible) _ = win32.ShowCursor(win32.FALSE);
-                try self.setPointerConstraint(window, self.pointer_constraint);
+                if (!self.pointer.visible) _ = win32.ShowCursor(win32.FALSE);
+                try self.setPointerConstraint(window, self.pointer.constraint);
             },
             win32.WM_USER + win32.WM_KILLFOCUS => {
                 window.focused = false;
@@ -117,13 +118,13 @@ pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {
                 check(win32.ClipCursor(null)) catch return error.ClipCursor;
             },
 
-            win32.WM_MOUSEMOVE => if (!self.relative_pointer) {
+            win32.WM_MOUSEMOVE => if (!self.pointer.is_relative) {
                 const x: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @intCast(msg.lParam)))));
                 const y: f64 = @floatFromInt(@as(u16, @truncate(@as(usize, @intCast(msg.lParam >> 16)))));
 
                 pointer.movement = .{ .position = .{ .x = x, .y = y } };
             },
-            win32.WM_INPUT => if (self.relative_pointer) {
+            win32.WM_INPUT => if (self.pointer.is_relative) {
                 var size: u32 = @sizeOf(win32.RAWINPUT);
                 var input: win32.RAWINPUT = undefined;
 
@@ -300,10 +301,9 @@ pub fn setFullscreen(self: *Win32, _: *Window, enabled: bool) !void {
 }
 
 pub fn setPointerVisible(self: *Win32, _: *Window, visible: bool) void {
-    if (self.pointer_visible == visible)
-        return;
+    if (self.pointer.visible == visible) return;
 
-    self.pointer_visible = visible;
+    self.pointer.visible = visible;
 
     if (visible) {
         while (win32.ShowCursor(win32.TRUE) < 0) {}
@@ -313,7 +313,7 @@ pub fn setPointerVisible(self: *Win32, _: *Window, visible: bool) void {
 }
 
 pub fn setPointerConstraint(self: *Win32, _: *Window, constraint: Window.Pointer.Constraint) !void {
-    self.pointer_constraint = constraint;
+    self.pointer.constraint = constraint;
     switch (constraint) {
         .none => {
             check(win32.ClipCursor(null)) catch return error.ClipCursor;
@@ -342,7 +342,7 @@ pub fn setPointerConstraint(self: *Win32, _: *Window, constraint: Window.Pointer
 }
 
 pub fn setPointerRelative(self: *Win32, _: *Window, enabled: bool) !void {
-    self.relative_pointer = enabled;
+    self.pointer.is_relative = enabled;
 }
 
 fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {

@@ -19,7 +19,7 @@ invisible_cursor: xlib.Cursor,
 pointer: struct {
     is_relative: bool = false,
     position: Position = .{},
-    previous_position: Position = .{},
+    previous_position: ?Position = null,
 
     const Position = @FieldType(Window.Pointer.Movement, "position");
 } = .{},
@@ -209,8 +209,8 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
     self.pointer.previous_position = self.pointer.position;
     defer pointer.movement = if (self.pointer.is_relative) .{
         .relative = .{
-            .dx = self.pointer.position.x - self.pointer.previous_position.x,
-            .dy = self.pointer.position.y - self.pointer.previous_position.y,
+            .dx = if (self.pointer.previous_position) |previous| self.pointer.position.x - previous.x else 0,
+            .dy = if (self.pointer.previous_position) |previous| previous.y - self.pointer.position.y else 0,
         },
     } else .{
         .position = self.pointer.position,

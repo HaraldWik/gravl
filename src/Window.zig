@@ -225,6 +225,7 @@ pub fn setPointerConstraint(self: *Window, constraint: Pointer.Constraint) !void
 }
 
 pub fn setPointerRelative(self: *Window, enabled: bool) !void {
+    self.pointer.movement = if (enabled) .{ .relative = .{} } else .{ .position = .{} };
     try self.call(.setPointerRelative, .{enabled});
 }
 

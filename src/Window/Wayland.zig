@@ -576,15 +576,10 @@ fn zxdgToplevelDecorationListener(_: *zxdg.ToplevelDecorationV1, event: zxdg.Top
 
 fn zwpRelativePointerListener(_: *zwp.RelativePointerV1, event: zwp.RelativePointerV1.Event, window: *Window) void {
     switch (event) {
-        .relative_motion => |motion| if (window.pointer.movement == .position) {
-            window.pointer.movement = .{ .relative = .{
-                .dx = motion.dx.toDouble(),
-                .dy = motion.dy.toDouble(),
-            } };
-        } else {
-            window.pointer.movement.relative.dx += motion.dx.toDouble();
-            window.pointer.movement.relative.dy += motion.dy.toDouble();
-        },
+        .relative_motion => |motion| window.pointer.movement = .{ .relative = .{
+            .dx = motion.dx.toDouble(),
+            .dy = motion.dy.toDouble(),
+        } },
     }
 }
 

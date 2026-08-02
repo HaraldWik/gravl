@@ -5,22 +5,37 @@ const DynLib = @import("DynLib.zig");
 const Game = @import("Game.zig");
 const Window = @import("Window.zig");
 const Renderer = @import("Renderer.zig");
+const m = @import("math.zig");
 
 const real_engine = @import("real_engine");
 
 const vertices: []const Vertex = &.{
-    .{ .position = .{ -0.5, -0.5, 0.0 }, .color = .{ 0.4, 0.4, 0.4 } },
-    .{ .position = .{ 0.5, -0.5, 0.0 }, .color = .{ 0.0, 1.0, 0.0 } },
-    .{ .position = .{ 0.5, 0.5, 0.0 }, .color = .{ 0.0, 0.0, 1.0 } },
-    .{ .position = .{ -0.5, 0.5, 0.0 }, .color = .{ 1.0, 1.0, 0.0 } },
+    // Front face (z = -0.5)
+    .{ .position = .{ -0.5, -0.5, -0.5 }, .color = .{ 1, 0, 0 } },
+    .{ .position = .{ 0.5, -0.5, -0.5 }, .color = .{ 0, 1, 0 } },
+    .{ .position = .{ 0.5, 0.5, -0.5 }, .color = .{ 0, 0, 1 } },
+    .{ .position = .{ -0.5, 0.5, -0.5 }, .color = .{ 1, 1, 0 } },
+
+    // Back face (z = 0.5)
+    .{ .position = .{ -0.5, -0.5, 0.5 }, .color = .{ 1, 0, 1 } },
+    .{ .position = .{ 0.5, -0.5, 0.5 }, .color = .{ 0, 1, 1 } },
+    .{ .position = .{ 0.5, 0.5, 0.5 }, .color = .{ 1, 1, 1 } },
+    .{ .position = .{ -0.5, 0.5, 0.5 }, .color = .{ 0.5, 0.5, 0.5 } },
 };
 
 const indices: []const u32 = &.{
-    // Triangle 1
     0, 1, 2,
-
-    // Triangle 2
     2, 3, 0,
+    4, 6, 5,
+    6, 4, 7,
+    0, 3, 7,
+    7, 4, 0,
+    1, 5, 6,
+    6, 2, 1,
+    3, 2, 6,
+    6, 7, 3,
+    0, 4, 5,
+    5, 1, 0,
 };
 
 const Vertex = extern struct {
@@ -31,7 +46,7 @@ const Vertex = extern struct {
 const DefaultMesh = Renderer.Mesh(&.{Vertex}, u32);
 
 const PushConstants = extern struct {
-    offset: [3]f32,
+    mvp: m.Matrix4 = .identity,
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -73,7 +88,7 @@ pub fn main(init: std.process.Init) !void {
     });
     defer window.close();
     try window.setPointerVisible(false);
-    try window.setPointerConstraint(.confined);
+    try window.setPointerConstraint(.locked);
     try window.setPointerRelative(true);
 
     var renderer: Renderer = try .init(gpa, &window);
@@ -121,7 +136,9 @@ pub fn main(init: std.process.Init) !void {
     const mesh: DefaultMesh = try .init(renderer, .{ .vertices = .{vertices}, .indices = indices });
     defer mesh.deinit(renderer);
 
-    var push: PushConstants = .{ .offset = @splat(0) };
+    var model_transform: m.Transform = .{};
+
+    var camera: Camera = .{};
 
     while (!window.should_close) {
         try window.poll(.{});
@@ -133,25 +150,6 @@ pub fn main(init: std.process.Init) !void {
         try renderer.acquire(window.size);
         renderer.bindDefaultState();
 
-        const speed = 2.0;
-
-        if (window.keyboard.isDown(.escape)) window.should_close = true;
-
-        if (window.keyboard.isDown(.a)) {
-            push.offset[0] -= delta_time * speed;
-        }
-        if (window.keyboard.isDown(.d)) {
-            push.offset[0] += delta_time * speed;
-        }
-        if (window.keyboard.isDown(.s)) {
-            push.offset[1] += delta_time * speed;
-        }
-        if (window.keyboard.isDown(.w)) {
-            push.offset[1] -= delta_time * speed;
-        }
-
-        push_constants.push(renderer, push);
-
         vertex.bind(renderer);
         fragment.bind(renderer);
 
@@ -160,12 +158,45 @@ pub fn main(init: std.process.Init) !void {
             renderer.setPolygonMode(.{ .line = .{ .width = 1.2 } });
         }
 
+        const speed = 2.0;
+
+        if (window.keyboard.isDown(.escape)) window.should_close = true;
+
+        if (window.keyboard.isDown(.s)) {
+            camera.position[2] -= delta_time * speed;
+        }
+        if (window.keyboard.isDown(.w)) {
+            camera.position[2] += delta_time * speed;
+        }
+        if (window.keyboard.isDown(.a)) {
+            camera.position[0] -= delta_time * speed;
+        }
+        if (window.keyboard.isDown(.d)) {
+            camera.position[0] += delta_time * speed;
+        }
+
+        switch (window.pointer.movement) {
+            .position => {},
+            .relative => |relative| {
+                if (relative.dx + relative.dy != 0) std.log.info("{any}", .{relative});
+                camera.look(@floatCast(relative.dx), @floatCast(relative.dy));
+            },
+        }
+
+        model_transform.rotation = model_transform.rotation.rotate(std.math.degreesToRadians(90.0 * delta_time), .y);
+
+        const model = model_transform.matrix();
+
+        const view = camera.viewMatrix();
+        const projection: m.Matrix4 = .perspectiveFovLh(std.math.degreesToRadians(90.0), window.size.aspect(), 0.1, 100.0);
+
+        const mvp = projection.mul(view).mul(model);
+
         mesh.bind(renderer);
+        push_constants.push(renderer, .{ .mvp = mvp });
         mesh.draw(renderer);
 
         try renderer.submit(window.size);
-
-        // std.debug.print("{f}", .{window.keyboard});
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
     }
@@ -188,3 +219,42 @@ pub fn getDeltaTime(io: std.Io) f32 {
     const duration = previous.durationTo(now);
     return @as(f32, @floatFromInt(duration.toMilliseconds())) / 1000.0;
 }
+
+pub const Camera = struct {
+    position: m.Vec3 = .{ 0, 0, 0 },
+    rotation: m.Quaternion = .identity,
+
+    yaw: f32 = 0,
+    pitch: f32 = 0,
+
+    pub fn viewMatrix(self: Camera) m.Matrix4 {
+        return self.rotation.inversed()
+            .matrix()
+            .mul(.translation(-self.position));
+    }
+
+    pub fn look(self: *Camera, dx: f32, dy: f32) void {
+        const sensitivity = 0.0025;
+
+        self.yaw -= dx * sensitivity;
+        self.pitch -= dy * sensitivity;
+
+        self.pitch = std.math.clamp(
+            self.pitch,
+            -std.math.pi / 2.0 + 0.01,
+            std.math.pi / 2.0 - 0.01,
+        );
+
+        const yaw: m.Quaternion = .fromAxisAngle(
+            .{ 0, 1, 0 },
+            self.yaw,
+        );
+
+        const pitch: m.Quaternion = .fromAxisAngle(
+            .{ 1, 0, 0 },
+            self.pitch,
+        );
+
+        self.rotation = yaw.mul(pitch).normalized();
+    }
+};

@@ -84,7 +84,6 @@ fn build(
 
     // TODO: fix
     const surface_format: vk.SurfaceFormatKHR = formats[0];
-
     // for (formats) |format| {
     //     if (format.format == .r8g8b8_srgb and
     //         format.color_space == .srgb_nonlinear_khr)
