@@ -183,17 +183,19 @@ pub fn main(init: std.process.Init) !void {
             },
         }
 
-        model_transform.rotation = model_transform.rotation.rotate(std.math.degreesToRadians(90.0 * delta_time), .y);
+        model_transform.rotation = model_transform.rotation.rotatedLocal(std.math.degreesToRadians(90.0 * delta_time), .y);
 
         const model = model_transform.matrix();
 
         const view = camera.viewMatrix();
         const projection: m.Matrix4 = .perspectiveFovLh(std.math.degreesToRadians(90.0), window.size.aspect(), 0.1, 100.0);
 
-        const mvp = projection.mul(view).mul(model);
+        const mv = projection.mul(view);
 
         mesh.bind(renderer);
-        push_constants.push(renderer, .{ .mvp = mvp });
+        push_constants.push(renderer, .{ .mvp = mv.mul(model) });
+        mesh.draw(renderer);
+        push_constants.push(renderer, .{ .mvp = mv });
         mesh.draw(renderer);
 
         try renderer.submit(window.size);
@@ -221,40 +223,20 @@ pub fn getDeltaTime(io: std.Io) f32 {
 }
 
 pub const Camera = struct {
-    position: m.Vec3 = .{ 0, 0, 0 },
+    position: m.Vec3 = @splat(0),
     rotation: m.Quaternion = .identity,
 
-    yaw: f32 = 0,
-    pitch: f32 = 0,
-
     pub fn viewMatrix(self: Camera) m.Matrix4 {
-        return self.rotation.inversed()
+        return self.rotation
+            .inversed()
             .matrix()
             .mul(.translation(-self.position));
     }
 
     pub fn look(self: *Camera, dx: f32, dy: f32) void {
-        const sensitivity = 0.0025;
+        const sensitivity = 0.025;
 
-        self.yaw -= dx * sensitivity;
-        self.pitch -= dy * sensitivity;
-
-        self.pitch = std.math.clamp(
-            self.pitch,
-            -std.math.pi / 2.0 + 0.01,
-            std.math.pi / 2.0 - 0.01,
-        );
-
-        const yaw: m.Quaternion = .fromAxisAngle(
-            .{ 0, 1, 0 },
-            self.yaw,
-        );
-
-        const pitch: m.Quaternion = .fromAxisAngle(
-            .{ 1, 0, 0 },
-            self.pitch,
-        );
-
-        self.rotation = yaw.mul(pitch).normalized();
+        self.rotation = self.rotation.rotatedLocal(-(dx * sensitivity), .y);
+        self.rotation = self.rotation.rotatedWorld(dy * sensitivity, .x);
     }
 };

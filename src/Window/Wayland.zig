@@ -577,8 +577,8 @@ fn zxdgToplevelDecorationListener(_: *zxdg.ToplevelDecorationV1, event: zxdg.Top
 fn zwpRelativePointerListener(_: *zwp.RelativePointerV1, event: zwp.RelativePointerV1.Event, window: *Window) void {
     switch (event) {
         .relative_motion => |motion| window.pointer.movement = .{ .relative = .{
-            .dx = motion.dx.toDouble(),
-            .dy = motion.dy.toDouble(),
+            .dx = motion.dx_unaccel.toDouble(),
+            .dy = motion.dy_unaccel.toDouble(),
         } },
     }
 }

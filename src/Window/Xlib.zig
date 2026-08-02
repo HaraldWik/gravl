@@ -82,6 +82,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
         .structure_notify = true,
         .focus_change = true,
 
+        .enter_window = true,
         .pointer_motion = xi_extension == null, // use xinput motion instead
         .button_press = true,
         .button_release = true,
@@ -210,7 +211,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
     defer pointer.movement = if (self.pointer.is_relative) .{
         .relative = .{
             .dx = if (self.pointer.previous_position) |previous| self.pointer.position.x - previous.x else 0,
-            .dy = if (self.pointer.previous_position) |previous| previous.y - self.pointer.position.y else 0,
+            .dy = if (self.pointer.previous_position) |previous| self.pointer.position.y - previous.y else 0,
         },
     } else .{
         .position = self.pointer.position,
@@ -249,6 +250,9 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
                 window.focused = false;
             },
 
+            .enter_notify => {
+                self.pointer.previous_position = null;
+            },
             .motion_notify => {
                 const motion = event.motion;
 

@@ -96,7 +96,7 @@ pub const Quaternion = packed struct {
         };
     }
 
-    pub fn rotate(self: Quaternion, radians: f32, axis: Axis) Quaternion {
+    pub fn rotatedLocal(self: Quaternion, radians: f32, axis: Axis) Quaternion {
         const q = switch (axis) {
             .x => fromAxisAngle(.{ 1, 0, 0 }, radians),
             .y => fromAxisAngle(.{ 0, 1, 0 }, radians),
@@ -104,6 +104,16 @@ pub const Quaternion = packed struct {
         };
 
         return self.mul(q).normalized();
+    }
+
+    pub fn rotatedWorld(self: Quaternion, radians: f32, axis: Axis) Quaternion {
+        const q = switch (axis) {
+            .x => fromAxisAngle(.{ 1, 0, 0 }, radians),
+            .y => fromAxisAngle(.{ 0, 1, 0 }, radians),
+            .z => fromAxisAngle(.{ 0, 0, 1 }, radians),
+        };
+
+        return q.mul(self).normalized();
     }
 
     pub fn rotateVector(self: Quaternion, v: Vec3) Vec3 {
