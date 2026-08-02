@@ -140,8 +140,11 @@ pub fn main(init: std.process.Init) !void {
 
     var camera: Camera = .{};
 
+    var buf: [128]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+
     while (!window.should_close) {
-        try window.poll(.{});
+        try window.poll(.{ .text = &w });
         _ = try io.sleep(.fromMilliseconds(8), .awake);
 
         const delta_time = getDeltaTime(io);
@@ -158,27 +161,14 @@ pub fn main(init: std.process.Init) !void {
             renderer.setPolygonMode(.{ .line = .{ .width = 1.2 } });
         }
 
-        const speed = 2.0;
-
         if (window.keyboard.isDown(.escape)) window.should_close = true;
 
-        if (window.keyboard.isDown(.s)) {
-            camera.position[2] -= delta_time * speed;
-        }
-        if (window.keyboard.isDown(.w)) {
-            camera.position[2] += delta_time * speed;
-        }
-        if (window.keyboard.isDown(.a)) {
-            camera.position[0] -= delta_time * speed;
-        }
-        if (window.keyboard.isDown(.d)) {
-            camera.position[0] += delta_time * speed;
-        }
+        camera.move(&window.keyboard, delta_time);
 
         switch (window.pointer.movement) {
             .position => {},
             .relative => |relative| {
-                if (relative.dx + relative.dy != 0) std.log.info("{any}", .{relative});
+                // if (relative.dx + relative.dy != 0) std.log.info("{any}", .{relative});
                 camera.look(@floatCast(relative.dx), @floatCast(relative.dy));
             },
         }
@@ -186,6 +176,7 @@ pub fn main(init: std.process.Init) !void {
         model_transform.rotation = model_transform.rotation.rotatedLocal(std.math.degreesToRadians(90.0 * delta_time), .y);
 
         const model = model_transform.matrix();
+        const model2 = (m.Transform{ .position = .{ 1.0, 0.0, 2.0 } }).matrix();
 
         const view = camera.viewMatrix();
         const projection: m.Matrix4 = .perspectiveFovLh(std.math.degreesToRadians(90.0), window.size.aspect(), 0.1, 100.0);
@@ -195,12 +186,15 @@ pub fn main(init: std.process.Init) !void {
         mesh.bind(renderer);
         push_constants.push(renderer, .{ .mvp = mv.mul(model) });
         mesh.draw(renderer);
-        push_constants.push(renderer, .{ .mvp = mv });
+        push_constants.push(renderer, .{ .mvp = mv.mul(model2) });
         mesh.draw(renderer);
 
         try renderer.submit(window.size);
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
+
+        if (w.buffered().len > 0) std.debug.print("{s}", .{w.buffered()});
+        _ = w.consumeAll();
     }
 }
 
@@ -237,6 +231,60 @@ pub const Camera = struct {
         const sensitivity = 0.025;
 
         self.rotation = self.rotation.rotatedLocal(-(dx * sensitivity), .y);
-        self.rotation = self.rotation.rotatedWorld(dy * sensitivity, .x);
+
+        const q = self.rotation;
+
+        const forward: m.Vec3 = .{
+            2.0 * (q.x * q.z + q.w * q.y),
+            2.0 * (q.y * q.z - q.w * q.x),
+            2.0 * (q.y * q.y + q.x * q.x) - 1.0,
+        };
+
+        const pitch = std.math.asin(-forward[1]);
+
+        const limit = std.math.degreesToRadians(89.0);
+        const new_pitch = std.math.clamp(
+            pitch + dy * sensitivity,
+            -limit,
+            limit,
+        );
+
+        self.rotation = self.rotation.rotatedWorld(
+            new_pitch - pitch,
+            .x,
+        );
+    }
+
+    const speed = 3.0;
+
+    pub fn move(self: *Camera, keyboard: *const Window.Keyboard, delta_time: f32) void {
+        const amount = delta_time * speed;
+
+        const matrix = self.rotation.matrix();
+
+        const right = m.Vec3{
+            matrix.inner[0],
+            matrix.inner[1],
+            matrix.inner[2],
+        };
+
+        const forward = m.Vec3{
+            -matrix.inner[8],
+            -matrix.inner[9],
+            -matrix.inner[10],
+        };
+
+        if (keyboard.isDown(.w)) {
+            self.position -= forward * @as(m.Vec3, @splat(amount));
+        }
+        if (keyboard.isDown(.s)) {
+            self.position += forward * @as(m.Vec3, @splat(amount));
+        }
+        if (keyboard.isDown(.d)) {
+            self.position += right * @as(m.Vec3, @splat(amount));
+        }
+        if (keyboard.isDown(.a)) {
+            self.position -= right * @as(m.Vec3, @splat(amount));
+        }
     }
 };

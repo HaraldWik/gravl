@@ -16,6 +16,8 @@ images: []vk.Image = &.{},
 image_views: []vk.ImageView = &.{},
 finished: []vk.Semaphore = &.{},
 
+depth: Depth,
+
 image_count: u32 = 0,
 image_index: u32 = 0,
 
@@ -25,7 +27,7 @@ extent: vk.Extent2D = undefined,
 graveyard: [graveyard_size]Zombie = @splat(.{}),
 
 const frames_in_flight = 3;
-const graveyard_size = 4;
+const graveyard_size = 6;
 
 pub const Zombie = struct {
     handle: vk.SwapchainKHR = .null_handle,
@@ -34,29 +36,140 @@ pub const Zombie = struct {
     images: []vk.Image = &.{},
     finished: []vk.Semaphore = &.{},
 
+    depth: ?Depth = null,
+
     image_count: u32 = 0,
     frame_retired: u64 = 0,
 
     valid: bool = false,
 
     pub fn deinit(self: *Zombie, gpa: std.mem.Allocator, device: Device) void {
-        for (self.image_views) |image_view| {
-            device.proxy.destroyImageView(image_view, null);
-        }
-
-        for (self.finished) |semaphore| {
-            device.proxy.destroySemaphore(semaphore, null);
-        }
-
-        if (self.handle != .null_handle) {
-            device.proxy.destroySwapchainKHR(self.handle, null);
-        }
+        for (self.image_views) |image_view| device.proxy.destroyImageView(image_view, @ptrCast(@alignCast(gpa.ptr)));
+        for (self.finished) |semaphore| device.proxy.destroySemaphore(semaphore, @ptrCast(@alignCast(gpa.ptr)));
+        if (self.depth) |*depth| depth.deinit(gpa, device);
+        if (self.handle != .null_handle) device.proxy.destroySwapchainKHR(self.handle, @ptrCast(@alignCast(gpa.ptr)));
 
         gpa.free(self.finished);
         gpa.free(self.image_views);
         gpa.free(self.images);
 
         self.* = .{};
+    }
+};
+
+pub const Depth = struct {
+    image: vk.Image,
+    image_view: vk.ImageView,
+    memory: vk.DeviceMemory,
+    format: vk.Format,
+
+    pub fn init(gpa: std.mem.Allocator, instance: Instance, physical_device: PhysicalDevice, device: Device, size: Size) !Depth {
+        const format = getFormat(instance, physical_device);
+
+        const image_create_info: *const vk.ImageCreateInfo = &.{
+            .image_type = .@"2d",
+            .format = format,
+            .extent = .{
+                .width = size.width,
+                .height = size.height,
+                .depth = 1,
+            },
+            .mip_levels = 1,
+            .array_layers = 1,
+            .samples = .{ .@"1_bit" = true },
+            .tiling = .optimal,
+            .usage = .{
+                .depth_stencil_attachment_bit = true,
+                // .transfer_src_bit = true,
+                // .transfer_dst_bit = true,
+            },
+            .sharing_mode = .exclusive,
+            .initial_layout = .undefined,
+        };
+
+        const image = try device.proxy.createImage(image_create_info, @ptrCast(@alignCast(gpa.ptr)));
+        errdefer device.proxy.destroyImage(image, @ptrCast(@alignCast(gpa.ptr)));
+
+        const requirements = device.proxy.getImageMemoryRequirements(image);
+
+        const allocate_info: vk.MemoryAllocateInfo = .{
+            .allocation_size = requirements.size,
+            .memory_type_index = findMemoryType(
+                requirements.memory_type_bits,
+                .{ .device_local_bit = true },
+                physical_device.memory_properties,
+            ),
+        };
+
+        const memory = try device.proxy.allocateMemory(&allocate_info, @ptrCast(@alignCast(gpa.ptr)));
+        errdefer device.proxy.freeMemory(memory, @ptrCast(@alignCast(gpa.ptr)));
+
+        try device.proxy.bindImageMemory(image, memory, 0);
+
+        const image_view_create_info: *const vk.ImageViewCreateInfo = &.{
+            .image = image,
+            .view_type = .@"2d",
+            .format = format,
+            .subresource_range = .{
+                .aspect_mask = .{
+                    .depth_bit = true,
+                    .stencil_bit = format == .d24_unorm_s8_uint,
+                },
+                .base_mip_level = 0,
+                .level_count = 1,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+            .components = .{
+                .r = .identity,
+                .g = .identity,
+                .b = .identity,
+                .a = .identity,
+            },
+        };
+
+        const image_view = try device.proxy.createImageView(image_view_create_info, @ptrCast(@alignCast(gpa.ptr)));
+
+        return .{
+            .image = image,
+            .image_view = image_view,
+            .memory = memory,
+            .format = format,
+        };
+    }
+
+    pub fn deinit(self: *Depth, gpa: std.mem.Allocator, device: Device) void {
+        device.proxy.destroyImage(self.image, @ptrCast(@alignCast(gpa.ptr)));
+        device.proxy.destroyImageView(self.image_view, @ptrCast(@alignCast(gpa.ptr)));
+        device.proxy.freeMemory(self.memory, @ptrCast(@alignCast(gpa.ptr)));
+        self.* = undefined;
+    }
+
+    fn getFormat(instance: Instance, physical_device: PhysicalDevice) vk.Format {
+        const candidates = [_]vk.Format{
+            .d32_sfloat,
+            .d24_unorm_s8_uint,
+            .d16_unorm,
+        };
+
+        for (candidates) |format| {
+            const props = instance.proxy.getPhysicalDeviceFormatProperties(physical_device.handle, format);
+
+            if (props.optimal_tiling_features.depth_stencil_attachment_bit) return format;
+        }
+
+        unreachable;
+    }
+    fn findMemoryType(type_filter: u32, properties: vk.MemoryPropertyFlags, memory_properties: vk.PhysicalDeviceMemoryProperties) u32 {
+        for (0..memory_properties.memory_type_count) |i| {
+            if ((type_filter & (@as(u32, 1) << @intCast(i))) != 0 and
+                (memory_properties.memory_types[i].property_flags.toInt() & properties.toInt()) == properties.toInt())
+            {
+                return @intCast(i);
+            }
+        }
+
+        unreachable;
     }
 };
 
@@ -140,12 +253,8 @@ fn build(
         .old_swapchain = old_handle,
     };
 
-    const handle = try device.proxy.createSwapchainKHR(
-        &create_info,
-        null,
-    );
-
-    errdefer device.proxy.destroySwapchainKHR(handle, null);
+    const handle = try device.proxy.createSwapchainKHR(&create_info, @ptrCast(@alignCast(gpa.ptr)));
+    errdefer device.proxy.destroySwapchainKHR(handle, @ptrCast(@alignCast(gpa.ptr)));
 
     var actual_image_count: u32 = 0;
 
@@ -169,9 +278,7 @@ fn build(
     var created_views: usize = 0;
 
     errdefer {
-        for (image_views[0..created_views]) |view| {
-            device.proxy.destroyImageView(view, null);
-        }
+        for (image_views[0..created_views]) |view| device.proxy.destroyImageView(view, @ptrCast(@alignCast(gpa.ptr)));
         gpa.free(image_views);
     }
 
@@ -192,10 +299,7 @@ fn build(
             },
         };
 
-        image_view.* = try device.proxy.createImageView(
-            &info,
-            null,
-        );
+        image_view.* = try device.proxy.createImageView(&info, @ptrCast(@alignCast(gpa.ptr)));
 
         created_views += 1;
     }
@@ -205,27 +309,28 @@ fn build(
     var created_semaphores: usize = 0;
 
     errdefer {
-        for (finished[0..created_semaphores]) |semaphore| {
-            device.proxy.destroySemaphore(semaphore, null);
-        }
+        for (finished[0..created_semaphores]) |semaphore| device.proxy.destroySemaphore(semaphore, @ptrCast(@alignCast(gpa.ptr)));
         gpa.free(finished);
     }
 
     const semaphore_info: vk.SemaphoreCreateInfo = .{};
 
     for (finished) |*semaphore| {
-        semaphore.* = try device.proxy.createSemaphore(
-            &semaphore_info,
-            null,
-        );
+        semaphore.* = try device.proxy.createSemaphore(&semaphore_info, @ptrCast(@alignCast(gpa.ptr)));
 
         created_semaphores += 1;
     }
+
+    const depth: Depth = try .init(gpa, instance, physical_device, device, .{
+        .width = extent.width,
+        .height = extent.height,
+    });
 
     swapchain.handle = handle;
     swapchain.images = images;
     swapchain.image_views = image_views;
     swapchain.finished = finished;
+    swapchain.depth = depth;
 
     swapchain.image_count = actual_image_count;
     swapchain.image_index = 0;
@@ -261,7 +366,7 @@ pub fn drain(
 }
 
 pub fn recreate(
-    swapchain: *Swapchain,
+    self: *Swapchain,
     gpa: std.mem.Allocator,
     instance: Instance,
     surface: Surface,
@@ -270,16 +375,16 @@ pub fn recreate(
     size: Size,
     accumulated_frame_index: u64,
 ) !void {
-    const zombie = for (&swapchain.graveyard) |*zombie| {
+    const zombie = for (&self.graveyard) |*zombie| {
         if (!zombie.valid) {
             break zombie;
         }
     } else {
         // No room in graveyard, wait for everything to finish
-        swapchain.deinit(gpa, device);
+        try device.proxy.deviceWaitIdle();
+        self.deinit(gpa, device);
 
-        return build(
-            swapchain,
+        return self.build(
             gpa,
             instance,
             surface,
@@ -291,22 +396,24 @@ pub fn recreate(
     };
 
     zombie.* = .{
-        .handle = swapchain.handle,
-        .image_views = swapchain.image_views,
-        .images = swapchain.images,
-        .finished = swapchain.finished,
-        .image_count = swapchain.image_count,
+        .handle = self.handle,
+        .image_views = self.image_views,
+        .images = self.images,
+        .finished = self.finished,
+        .depth = self.depth,
+        .image_count = self.image_count,
         .frame_retired = accumulated_frame_index,
         .valid = true,
     };
 
-    swapchain.handle = .null_handle;
-    swapchain.images = &.{};
-    swapchain.image_views = &.{};
-    swapchain.finished = &.{};
+    self.handle = .null_handle;
+    self.images = &.{};
+    self.image_views = &.{};
+    self.finished = &.{};
+    self.depth = undefined;
 
     return build(
-        swapchain,
+        self,
         gpa,
         instance,
         surface,
@@ -345,33 +452,22 @@ fn getPresentMode(gpa: std.mem.Allocator, instance: Instance, surface: Surface, 
     return found_present_mode;
 }
 
-pub fn deinit(
-    swapchain: *Swapchain,
-    gpa: std.mem.Allocator,
-    device: Device,
-) void {
-    for (&swapchain.graveyard) |*zombie| {
+pub fn deinit(self: *Swapchain, gpa: std.mem.Allocator, device: Device) void {
+    for (&self.graveyard) |*zombie| {
         if (!zombie.valid) continue;
-
         zombie.deinit(gpa, device);
     }
 
-    for (swapchain.image_views) |image_view| {
-        device.proxy.destroyImageView(image_view, null);
-    }
+    for (self.image_views) |image_view| device.proxy.destroyImageView(image_view, @ptrCast(@alignCast(gpa.ptr)));
+    for (self.finished) |semaphore| device.proxy.destroySemaphore(semaphore, @ptrCast(@alignCast(gpa.ptr)));
 
-    for (swapchain.finished) |semaphore| {
-        device.proxy.destroySemaphore(semaphore, null);
-    }
+    self.depth.deinit(gpa, device);
 
-    if (swapchain.handle != .null_handle) device.proxy.destroySwapchainKHR(
-        swapchain.handle,
-        null,
-    );
+    if (self.handle != .null_handle) device.proxy.destroySwapchainKHR(self.handle, @ptrCast(@alignCast(gpa.ptr)));
 
-    gpa.free(swapchain.finished);
-    gpa.free(swapchain.image_views);
-    gpa.free(swapchain.images);
+    gpa.free(self.finished);
+    gpa.free(self.image_views);
+    gpa.free(self.images);
 
-    swapchain.* = .{};
+    self.* = undefined;
 }

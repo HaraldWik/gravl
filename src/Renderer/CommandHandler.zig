@@ -60,7 +60,7 @@ pub fn deinit(self: CommandHandler, gpa: std.mem.Allocator, device: Device) void
     device.proxy.destroyCommandPool(self.command_pool, @ptrCast(@alignCast(gpa.ptr)));
 }
 
-pub fn begin(self: *CommandHandler, device: Device, swapchain: Swapchain) !void {
+pub fn begin(self: *CommandHandler, device: Device, swapchain: Swapchain, clear_color_value: ?vk.ClearColorValue) !void {
     const frame = self.frames[self.frame_index % frames_in_flight];
     const command_buffer = frame.command_buffer;
 
@@ -112,8 +112,18 @@ pub fn begin(self: *CommandHandler, device: Device, swapchain: Swapchain) !void 
     device.proxy.cmdSetScissor(command_buffer, 0, &.{scissor});
 
     const clear_color: vk.ClearValue = .{
-        .color = .{ .float_32 = .{ 0.0, 0.0, 0.0, 1.0 } },
+        .color = clear_color_value orelse .{
+            .float_32 = .{ 0.0, 0.0, 0.0, 1.0 },
+        },
     };
+
+    const clear_depth: vk.ClearValue = .{
+        .depth_stencil = .{
+            .depth = 1.0,
+            .stencil = 0,
+        },
+    };
+
     const color_attachment_infos: []const vk.RenderingAttachmentInfo = &.{
         .{
             .image_view = swapchain.image_views[swapchain.image_index],
@@ -126,10 +136,21 @@ pub fn begin(self: *CommandHandler, device: Device, swapchain: Swapchain) !void 
         },
     };
 
+    const depth_attachment_info: vk.RenderingAttachmentInfo = .{
+        .image_view = swapchain.depth.image_view,
+        .image_layout = .depth_attachment_optimal,
+        .load_op = .clear,
+        .store_op = .store,
+        .clear_value = clear_depth,
+        .resolve_mode = .{},
+        .resolve_image_layout = .undefined,
+    };
+
     const rendering_info: *const vk.RenderingInfo = &.{
         .layer_count = 1,
         .color_attachment_count = @intCast(color_attachment_infos.len),
         .p_color_attachments = color_attachment_infos.ptr,
+        .p_depth_attachment = &depth_attachment_info,
         .render_area = .{
             .extent = swapchain.extent,
             .offset = .{ .x = 0, .y = 0 },
@@ -146,7 +167,7 @@ pub fn end(self: *CommandHandler, device: Device, swapchain: Swapchain) !void {
 
     device.proxy.cmdEndRendering(command_buffer);
 
-    const end_memory_barrier: vk.ImageMemoryBarrier = .{
+    const color_to_present: vk.ImageMemoryBarrier = .{
         .src_access_mask = .{ .color_attachment_write_bit = true },
         .dst_access_mask = .{},
         .old_layout = .color_attachment_optimal,
@@ -155,23 +176,23 @@ pub fn end(self: *CommandHandler, device: Device, swapchain: Swapchain) !void {
         .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
         .image = swapchain.images[swapchain.image_index],
         .subresource_range = .{
-            .aspect_mask = .{
-                .color_bit = true,
-            },
-            .level_count = 1,
-            .layer_count = 1,
+            .aspect_mask = .{ .color_bit = true },
             .base_mip_level = 0,
+            .level_count = 1,
             .base_array_layer = 0,
+            .layer_count = 1,
         },
     };
+
     device.proxy.cmdPipelineBarrier(
         command_buffer,
         .{ .color_attachment_output_bit = true },
-        .{ .bottom_of_pipe_bit = true },
+        .{},
         .{},
         null,
         null,
-        &.{end_memory_barrier},
+        &.{color_to_present},
     );
+
     try device.proxy.endCommandBuffer(command_buffer);
 }

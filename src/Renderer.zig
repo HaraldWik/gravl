@@ -177,7 +177,7 @@ pub fn acquire(self: *Renderer, size: Window.Size) !void {
 
     try device.proxy.resetCommandBuffer(frame.command_buffer, .{});
 
-    try self.command_handler.begin(self.device, swapchain.*);
+    try self.command_handler.begin(self.device, swapchain.*, null);
 
     device.proxy.cmdSetViewportWithCount(
         frame.command_buffer,
@@ -285,7 +285,7 @@ pub fn bindDefaultState(self: Renderer) void {
 
     device.proxy.cmdSetCullMode(
         frame.command_buffer,
-        .{},
+        .{ .front_bit = true },
     );
 
     device.proxy.cmdSetFrontFace(
@@ -328,12 +328,12 @@ pub fn bindDefaultState(self: Renderer) void {
     // depth/stencil
     device.proxy.cmdSetDepthTestEnable(
         frame.command_buffer,
-        .false,
+        .true,
     );
 
     device.proxy.cmdSetDepthWriteEnable(
         frame.command_buffer,
-        .false,
+        .true,
     );
 
     device.proxy.cmdSetDepthCompareOp(

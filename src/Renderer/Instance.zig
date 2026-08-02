@@ -43,7 +43,7 @@ pub fn init(
     const application_info: *const vk.ApplicationInfo = &.{
         .p_application_name = null,
         .application_version = vk.makeApiVersion(0, 1, 0, 0).toU32(),
-        .p_engine_name = "real_engine",
+        .p_engine_name = "gravl",
         .engine_version = vk.makeApiVersion(0, 1, 0, 0).toU32(),
         .api_version = api_version.toU32(),
     };

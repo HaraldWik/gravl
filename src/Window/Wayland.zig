@@ -314,7 +314,7 @@ pub fn setPointerRelative(self: *Wayland, window: *Window, enabled: bool) !void 
     const pointer = self.pointer orelse return;
     const relative_pointer_manager = self.relative_pointer_manager orelse return;
 
-    if (self.relative_pointer) |relative| relative.destroy();
+    if (self.relative_pointer) |relative| if (enabled) relative.destroy();
     if (!enabled) return;
 
     const relative_pointer = try relative_pointer_manager.getRelativePointer(pointer);

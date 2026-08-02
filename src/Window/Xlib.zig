@@ -743,7 +743,7 @@ const xlib = struct {
             colormap_change: bool = false,
             owner_grab_button: bool = false,
 
-            _: if (@bitSizeOf(c_ulong) == 32) u7 else u39 = 0,
+            pad: if (@bitSizeOf(c_ulong) == 32) u7 else u39 = 0,
         };
 
         pub const Generic = extern struct {
