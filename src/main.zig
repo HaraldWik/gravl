@@ -140,11 +140,10 @@ pub fn main(init: std.process.Init) !void {
 
     var camera: Camera = .{};
 
-    var buf: [128]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buf);
+    var pointer_captured: bool = true;
 
     while (!window.should_close) {
-        try window.poll(.{ .text = &w });
+        try window.poll(.{});
         _ = try io.sleep(.fromMilliseconds(8), .awake);
 
         const delta_time = getDeltaTime(io);
@@ -161,7 +160,19 @@ pub fn main(init: std.process.Init) !void {
             renderer.setPolygonMode(.{ .line = .{ .width = 1.2 } });
         }
 
-        if (window.keyboard.isDown(.escape)) window.should_close = true;
+        if (window.keyboard.get(.escape) == .press) {
+            pointer_captured = !pointer_captured;
+
+            if (pointer_captured) {
+                try window.setPointerVisible(false);
+                try window.setPointerConstraint(.locked);
+                try window.setPointerRelative(true);
+            } else {
+                try window.setPointerVisible(true);
+                try window.setPointerConstraint(.none);
+                try window.setPointerRelative(false);
+            }
+        }
 
         camera.move(&window.keyboard, delta_time);
 
@@ -192,9 +203,6 @@ pub fn main(init: std.process.Init) !void {
         try renderer.submit(window.size);
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
-
-        if (w.buffered().len > 0) std.debug.print("{s}", .{w.buffered()});
-        _ = w.consumeAll();
     }
 }
 
@@ -227,9 +235,9 @@ pub const Camera = struct {
             .mul(.translation(-self.position));
     }
 
-    pub fn look(self: *Camera, dx: f32, dy: f32) void {
-        const sensitivity = 0.025;
+    const sensitivity = 0.005;
 
+    pub fn look(self: *Camera, dx: f32, dy: f32) void {
         self.rotation = self.rotation.rotatedLocal(-(dx * sensitivity), .y);
 
         const q = self.rotation;

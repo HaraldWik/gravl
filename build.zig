@@ -21,8 +21,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // wayland.linkSystemLibrary("wayland-client", .{ .needed = true });
-
     scanner.addCustomProtocol(wayland_protocols.path("stable/xdg-shell/xdg-shell.xml"));
     scanner.addCustomProtocol(wayland_protocols.path("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"));
     scanner.addCustomProtocol(wayland_protocols.path("staging/cursor-shape/cursor-shape-v1.xml"));
