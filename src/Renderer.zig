@@ -149,72 +149,13 @@ pub fn deinit(self: *Renderer) void {
     self.* = undefined;
 }
 
-fn getFrame(self: Renderer) CommandHandler.FrameData {
-    return self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
-}
-
-pub fn acquire(self: *Renderer, size: Window.Size) !void {
-    const device = self.device;
-    const swapchain = &self.*.swapchain;
-    const frame = self.getFrame();
-
-    try self.resize(size);
-
-    _ = try device.proxy.waitForFences(&.{frame.in_flight_fence}, .true, std.math.maxInt(u64));
-    try device.proxy.resetFences(&.{frame.in_flight_fence});
-
-    swapchain.drain(self.gpa, device, self.command_handler.frame_index);
-
-    const result = device.wrapper.dispatch.vkAcquireNextImageKHR.?(
-        device.handle,
-        swapchain.handle,
-        std.math.maxInt(u64),
-        frame.image_available,
-        .null_handle,
-        &swapchain.image_index,
-    );
-    if (result == .error_out_of_date_khr) try self.resize(size);
-
-    try device.proxy.resetCommandBuffer(frame.command_buffer, .{});
-
-    try self.command_handler.begin(self.device, swapchain.*, null);
-
-    device.proxy.cmdSetViewportWithCount(
-        frame.command_buffer,
-        &.{.{
-            .x = 0,
-            .y = 0,
-            .width = @floatFromInt(self.swapchain.extent.width),
-            .height = @floatFromInt(self.swapchain.extent.height),
-            .min_depth = 0.0,
-            .max_depth = 1.0,
-        }},
-    );
-
-    device.proxy.cmdSetScissorWithCount(
-        frame.command_buffer,
-        &.{.{
-            .offset = .{ .x = 0, .y = 0 },
-            .extent = self.swapchain.extent,
-        }},
-    );
-
-    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .vertex_bit = true }}, null);
-    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_control_bit = true }}, null);
-    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_evaluation_bit = true }}, null);
-    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .geometry_bit = true }}, null);
-    device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .fragment_bit = true }}, null);
-}
-
-pub fn submit(self: *Renderer, size: Window.Size) !void {
+pub fn submit(self: *Renderer, frame: Frame) !void {
     const device = self.device;
     const swapchain = self.swapchain;
-    const frame = self.getFrame();
-
-    try self.command_handler.end(device, swapchain);
+    const frame_data = self.command_handler.frames[self.command_handler.frame_index % CommandHandler.frames_in_flight];
 
     const wait_semaphores: []const vk.Semaphore = &.{
-        frame.image_available,
+        frame_data.image_available,
     };
 
     const signal_semaphores: []const vk.Semaphore = &.{
@@ -235,7 +176,7 @@ pub fn submit(self: *Renderer, size: Window.Size) !void {
         .p_wait_dst_stage_mask = wait_stages.ptr,
     };
 
-    try device.proxy.queueSubmit(device.graphics_queue, &.{submit_info}, frame.in_flight_fence);
+    try device.proxy.queueSubmit(device.graphics_queue, &.{submit_info}, frame_data.in_flight_fence);
 
     const present_info: vk.PresentInfoKHR = .{
         .wait_semaphore_count = @intCast(signal_semaphores.len),
@@ -246,7 +187,7 @@ pub fn submit(self: *Renderer, size: Window.Size) !void {
     };
 
     _ = device.proxy.queuePresentKHR(device.graphics_queue, &present_info) catch |err| switch (err) {
-        error.OutOfDateKHR => try self.resize(size),
+        error.OutOfDateKHR => {},
         else => return err,
     };
 
@@ -266,146 +207,6 @@ pub fn resize(self: *Renderer, size: Window.Size) !void {
         size,
         self.command_handler.frame_index,
     );
-}
-
-pub fn bindDefaultState(self: Renderer) void {
-    const device = self.device;
-    const frame = self.getFrame();
-
-    // rasterizer
-    device.proxy.cmdSetRasterizerDiscardEnable(
-        frame.command_buffer,
-        .false,
-    );
-
-    device.proxy.cmdSetPolygonModeEXT(
-        frame.command_buffer,
-        .fill,
-    );
-
-    device.proxy.cmdSetCullMode(
-        frame.command_buffer,
-        .{ .front_bit = true },
-    );
-
-    device.proxy.cmdSetFrontFace(
-        frame.command_buffer,
-        .counter_clockwise,
-    );
-
-    device.proxy.cmdSetDepthBiasEnable(
-        frame.command_buffer,
-        .false,
-    );
-
-    device.proxy.cmdSetDepthClampEnableEXT(
-        frame.command_buffer,
-        .false,
-    );
-
-    // multisampling
-    device.proxy.cmdSetRasterizationSamplesEXT(
-        frame.command_buffer,
-        .{ .@"1_bit" = true },
-    );
-
-    device.proxy.cmdSetSampleMaskEXT(
-        frame.command_buffer,
-        .{ .@"1_bit" = true },
-        &.{0xffffffff},
-    );
-
-    device.proxy.cmdSetAlphaToCoverageEnableEXT(
-        frame.command_buffer,
-        .false,
-    );
-
-    device.proxy.cmdSetAlphaToOneEnableEXT(
-        frame.command_buffer,
-        .false,
-    );
-
-    // depth/stencil
-    device.proxy.cmdSetDepthTestEnable(
-        frame.command_buffer,
-        .true,
-    );
-
-    device.proxy.cmdSetDepthWriteEnable(
-        frame.command_buffer,
-        .true,
-    );
-
-    device.proxy.cmdSetDepthCompareOp(
-        frame.command_buffer,
-        .less,
-    );
-
-    device.proxy.cmdSetDepthBoundsTestEnable(
-        frame.command_buffer,
-        .false,
-    );
-
-    device.proxy.cmdSetStencilTestEnable(
-        frame.command_buffer,
-        .false,
-    );
-
-    // blending
-    device.proxy.cmdSetColorBlendEnableEXT(
-        frame.command_buffer,
-        0,
-        &.{.true},
-    );
-
-    device.proxy.cmdSetColorBlendEquationEXT(
-        frame.command_buffer,
-        0,
-        &.{.{
-            .src_color_blend_factor = .src_alpha,
-            .dst_color_blend_factor = .one_minus_src_alpha,
-            .color_blend_op = .add,
-            .src_alpha_blend_factor = .one,
-            .dst_alpha_blend_factor = .zero,
-            .alpha_blend_op = .add,
-        }},
-    );
-
-    device.proxy.cmdSetColorWriteMaskEXT(
-        frame.command_buffer,
-        0,
-        &.{.{
-            .r_bit = true,
-            .g_bit = true,
-            .b_bit = true,
-            .a_bit = true,
-        }},
-    );
-
-    device.proxy.cmdSetLogicOpEnableEXT(
-        frame.command_buffer,
-        .false,
-    );
-}
-
-pub const PolygonMode = union(vk.PolygonMode) {
-    fill,
-    line: struct {
-        width: f32 = 1.0,
-    },
-    point,
-    fill_rectangle_nv,
-};
-
-pub fn setPolygonMode(self: Renderer, mode: PolygonMode) void {
-    const frame = self.getFrame();
-    const mode_enum = std.meta.activeTag(mode);
-    self.device.proxy.cmdSetPolygonModeEXT(frame.command_buffer, mode_enum);
-
-    switch (mode) {
-        .line => |line| self.device.proxy.cmdSetLineWidth(frame.command_buffer, line.width),
-        else => {},
-    }
 }
 
 pub const ShaderStage = ShaderObject.Stage;
@@ -462,9 +263,8 @@ pub fn Shader(stage: ShaderStage) type {
             self.object.deinit(renderer.gpa, renderer.device);
         }
 
-        pub fn bind(self: Self, renderer: Renderer) void {
-            const frame = renderer.getFrame();
-            renderer.device.proxy.cmdBindShadersEXT(
+        pub fn bind(self: Self, frame: Frame) void {
+            frame.device.proxy.cmdBindShadersEXT(
                 frame.command_buffer,
                 &.{@bitCast(@intFromEnum(stage))},
                 &.{self.object.handle},
@@ -510,10 +310,8 @@ pub fn PushConstants(comptime Value: type) type {
             renderer.device.proxy.destroyPipelineLayout(self.layout, @ptrCast(@alignCast(renderer.gpa.ptr)));
         }
 
-        pub fn push(self: Self, renderer: Renderer, value: Value) void {
-            const frame = renderer.getFrame();
-
-            renderer.device.proxy.cmdPushConstants(
+        pub fn push(self: Self, frame: Frame, value: Value) void {
+            frame.device.proxy.cmdPushConstants(
                 frame.command_buffer,
                 self.layout,
                 push_constant_range.stage_flags,
@@ -632,9 +430,8 @@ pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
             for (self.buffers) |buffer| buffer.deinit(renderer.gpa, renderer.device);
         }
 
-        pub fn bind(self: Self, renderer: Renderer) void {
-            const frame = renderer.getFrame();
-            renderer.device.proxy.cmdSetVertexInputEXT(
+        pub fn bind(self: Self, frame: Frame) void {
+            frame.device.proxy.cmdSetVertexInputEXT(
                 frame.command_buffer,
                 bindings[0..],
                 attributes[0..],
@@ -647,14 +444,14 @@ pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
 
             const offsets: [streams.len]vk.DeviceSize = @splat(0);
 
-            renderer.device.proxy.cmdBindVertexBuffers(
+            frame.device.proxy.cmdBindVertexBuffers(
                 frame.command_buffer,
                 0,
                 &handles,
                 &offsets,
             );
 
-            if (has_indices) renderer.device.proxy.cmdBindIndexBuffer(
+            if (has_indices) frame.device.proxy.cmdBindIndexBuffer(
                 frame.command_buffer,
                 self.index_buffer.handle,
                 0,
@@ -667,29 +464,27 @@ pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
             );
         }
 
-        pub fn draw(self: Self, renderer: Renderer) void {
-            const frame = renderer.getFrame();
-
-            renderer.device.proxy.cmdSetPrimitiveTopology(
+        pub fn draw(self: Self, frame: Frame) void {
+            frame.device.proxy.cmdSetPrimitiveTopology(
                 frame.command_buffer,
                 self.topology,
             );
 
-            renderer.device.proxy.cmdSetPrimitiveRestartEnable(
+            frame.device.proxy.cmdSetPrimitiveRestartEnable(
                 frame.command_buffer,
                 @enumFromInt(@intFromBool(self.primitive_restart)),
             );
 
             if (has_indices) {
-                renderer.device.proxy.cmdDrawIndexed(frame.command_buffer, self.count, 1, 0, 0, 0);
+                frame.device.proxy.cmdDrawIndexed(frame.command_buffer, self.count, 1, 0, 0, 0);
             } else {
-                renderer.device.proxy.cmdDraw(frame.command_buffer, self.count, 1, 0, 0);
+                frame.device.proxy.cmdDraw(frame.command_buffer, self.count, 1, 0, 0);
             }
         }
 
         fn formatOf(comptime T: type) vk.Format {
-            return switch (@typeInfo(T)) {
-                .float => switch (@bitSizeOf(T)) {
+            switch (@typeInfo(T)) {
+                .float => return switch (@bitSizeOf(T)) {
                     32 => .r32_sfloat,
                     64 => .r64_sfloat,
                     else => @compileError("unsupported float size"),
@@ -708,7 +503,314 @@ pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
                 },
 
                 else => @compileError("unsupported vertex attribute type"),
-            };
+            }
         }
     };
 }
+
+pub const Frame = struct {
+    device: Device,
+    image: vk.Image,
+    command_buffer: vk.CommandBuffer,
+
+    pub const BeginOptions = struct {
+        clear_color: [4]f32 = .{ 0.0, 0.0, 0.0, 1.0 },
+    };
+
+    pub fn begin(renderer: *Renderer, size: Window.Size, options: BeginOptions) !Frame {
+        const device = renderer.device;
+        const swapchain = &renderer.swapchain;
+
+        try renderer.resize(size);
+
+        const frame = renderer.command_handler.frames[renderer.command_handler.frame_index % CommandHandler.frames_in_flight];
+
+        _ = try device.proxy.waitForFences(
+            &.{frame.in_flight_fence},
+            .true,
+            std.math.maxInt(u64),
+        );
+
+        try device.proxy.resetFences(&.{frame.in_flight_fence});
+
+        swapchain.drain(
+            renderer.gpa,
+            device,
+            renderer.command_handler.frame_index,
+        );
+
+        const result = device.wrapper.dispatch.vkAcquireNextImageKHR.?(
+            device.handle,
+            swapchain.handle,
+            std.math.maxInt(u64),
+            frame.image_available,
+            .null_handle,
+            &swapchain.image_index,
+        );
+
+        if (result == .error_out_of_date_khr or result == .suboptimal_khr) {
+            try renderer.resize(size);
+            return error.SwapchainOutOfDate;
+        }
+
+        const image = swapchain.images[swapchain.image_index];
+
+        try device.proxy.resetCommandBuffer(
+            frame.command_buffer,
+            .{},
+        );
+
+        try device.proxy.beginCommandBuffer(
+            frame.command_buffer,
+            &.{},
+        );
+
+        const color_barrier = vk.ImageMemoryBarrier{
+            .src_access_mask = .{},
+            .dst_access_mask = .{
+                .color_attachment_write_bit = true,
+            },
+            .old_layout = .undefined,
+            .new_layout = .color_attachment_optimal,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .image = image,
+            .subresource_range = .{
+                .aspect_mask = .{
+                    .color_bit = true,
+                },
+                .base_mip_level = 0,
+                .level_count = 1,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+        };
+
+        device.proxy.cmdPipelineBarrier(
+            frame.command_buffer,
+            .{ .top_of_pipe_bit = true },
+            .{ .color_attachment_output_bit = true },
+            .{},
+            null,
+            null,
+            &.{color_barrier},
+        );
+
+        device.proxy.cmdSetViewportWithCount(
+            frame.command_buffer,
+            &.{.{
+                .x = 0,
+                .y = 0,
+                .width = @floatFromInt(swapchain.extent.width),
+                .height = @floatFromInt(swapchain.extent.height),
+                .min_depth = 0,
+                .max_depth = 1,
+            }},
+        );
+
+        device.proxy.cmdSetScissorWithCount(
+            frame.command_buffer,
+            &.{.{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = swapchain.extent,
+            }},
+        );
+
+        const clear_color: vk.ClearValue = .{
+            .color = .{
+                .float_32 = options.clear_color,
+            },
+        };
+
+        const clear_depth: vk.ClearValue = .{
+            .depth_stencil = .{
+                .depth = 1.0,
+                .stencil = 0,
+            },
+        };
+
+        const color_attachment: *const vk.RenderingAttachmentInfo = &.{
+            .image_view = swapchain.image_views[swapchain.image_index],
+            .image_layout = .color_attachment_optimal,
+            .load_op = .clear,
+            .store_op = .store,
+            .clear_value = clear_color,
+            .resolve_mode = .{},
+            .resolve_image_layout = .undefined,
+        };
+
+        const depth_attachment: *const vk.RenderingAttachmentInfo = &.{
+            .image_view = swapchain.depth.image_view,
+            .image_layout = .depth_attachment_optimal,
+            .load_op = .clear,
+            .store_op = .store,
+            .clear_value = clear_depth,
+            .resolve_mode = .{},
+            .resolve_image_layout = .undefined,
+        };
+
+        const rendering_info: *const vk.RenderingInfo = &.{
+            .render_area = .{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = swapchain.extent,
+            },
+            .layer_count = 1,
+            .color_attachment_count = 1,
+            .p_color_attachments = @ptrCast(color_attachment),
+            .p_depth_attachment = depth_attachment,
+            .view_mask = 0,
+        };
+
+        device.proxy.cmdBeginRendering(
+            frame.command_buffer,
+            rendering_info,
+        );
+
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .vertex_bit = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_control_bit = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_evaluation_bit = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .geometry_bit = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .fragment_bit = true }}, null);
+
+        return .{
+            .device = device,
+            .image = image,
+            .command_buffer = frame.command_buffer,
+        };
+    }
+
+    pub fn end(self: Frame) !void {
+        const device = self.device;
+        const command_buffer = self.command_buffer;
+
+        device.proxy.cmdEndRendering(command_buffer);
+
+        const color_to_present: vk.ImageMemoryBarrier = .{
+            .src_access_mask = .{ .color_attachment_write_bit = true },
+            .dst_access_mask = .{},
+            .old_layout = .color_attachment_optimal,
+            .new_layout = .present_src_khr,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .image = self.image,
+            .subresource_range = .{
+                .aspect_mask = .{ .color_bit = true },
+                .base_mip_level = 0,
+                .level_count = 1,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+        };
+
+        device.proxy.cmdPipelineBarrier(
+            command_buffer,
+            .{ .color_attachment_output_bit = true },
+            .{},
+            .{},
+            null,
+            null,
+            &.{color_to_present},
+        );
+
+        try device.proxy.endCommandBuffer(command_buffer);
+    }
+
+    pub const PolygonMode = union(vk.PolygonMode) {
+        fill,
+        line: struct {
+            width: f32 = 1.0,
+        },
+        point,
+        fill_rectangle_nv,
+    };
+
+    pub fn bindDefaultState(self: Frame) void {
+        const device = self.device;
+        const command_buffer = self.command_buffer;
+
+        // rasterizer
+        device.proxy.cmdSetRasterizerDiscardEnable(command_buffer, .false);
+
+        device.proxy.cmdSetPolygonModeEXT(command_buffer, .fill);
+
+        device.proxy.cmdSetCullMode(
+            command_buffer,
+            .{ .front_bit = true },
+        );
+        device.proxy.cmdSetFrontFace(command_buffer, .counter_clockwise);
+
+        device.proxy.cmdSetDepthBiasEnable(command_buffer, .false);
+
+        device.proxy.cmdSetDepthClampEnableEXT(command_buffer, .false);
+
+        // multisampling
+        device.proxy.cmdSetRasterizationSamplesEXT(
+            command_buffer,
+            .{ .@"1_bit" = true },
+        );
+
+        device.proxy.cmdSetSampleMaskEXT(
+            command_buffer,
+            .{ .@"1_bit" = true },
+            &.{0xffffffff},
+        );
+
+        device.proxy.cmdSetAlphaToCoverageEnableEXT(command_buffer, .false);
+
+        device.proxy.cmdSetAlphaToOneEnableEXT(command_buffer, .false);
+
+        // depth/stencil
+        device.proxy.cmdSetDepthTestEnable(command_buffer, .true);
+
+        device.proxy.cmdSetDepthWriteEnable(command_buffer, .true);
+
+        device.proxy.cmdSetDepthCompareOp(command_buffer, .less);
+
+        device.proxy.cmdSetDepthBoundsTestEnable(command_buffer, .false);
+
+        device.proxy.cmdSetStencilTestEnable(command_buffer, .false);
+
+        // blending
+        device.proxy.cmdSetColorBlendEnableEXT(
+            command_buffer,
+            0,
+            &.{.true},
+        );
+
+        device.proxy.cmdSetColorBlendEquationEXT(
+            command_buffer,
+            0,
+            &.{.{
+                .src_color_blend_factor = .src_alpha,
+                .dst_color_blend_factor = .one_minus_src_alpha,
+                .color_blend_op = .add,
+                .src_alpha_blend_factor = .one,
+                .dst_alpha_blend_factor = .zero,
+                .alpha_blend_op = .add,
+            }},
+        );
+
+        device.proxy.cmdSetColorWriteMaskEXT(
+            command_buffer,
+            0,
+            &.{.{
+                .r_bit = true,
+                .g_bit = true,
+                .b_bit = true,
+                .a_bit = true,
+            }},
+        );
+
+        device.proxy.cmdSetLogicOpEnableEXT(command_buffer, .false);
+    }
+
+    pub fn setPolygonMode(self: Frame, mode: PolygonMode) void {
+        const mode_enum = std.meta.activeTag(mode);
+        self.device.proxy.cmdSetPolygonModeEXT(self.command_buffer, mode_enum);
+
+        switch (mode) {
+            .line => |line| self.device.proxy.cmdSetLineWidth(self.command_buffer, line.width),
+            else => {},
+        }
+    }
+};

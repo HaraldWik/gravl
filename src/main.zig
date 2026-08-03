@@ -151,15 +151,15 @@ pub fn main(init: std.process.Init) !void {
         const delta_time = getDeltaTime(io);
         const fps = 1.0 / delta_time;
 
-        try renderer.acquire(window.size);
-        renderer.bindDefaultState();
+        const frame: Renderer.Frame = try .begin(&renderer, window.size, .{});
+        frame.bindDefaultState();
 
-        vertex.bind(renderer);
-        fragment.bind(renderer);
+        vertex.bind(frame);
+        fragment.bind(frame);
 
         if (window.keyboard.isDown(.space)) {
-            vertex2.bind(renderer);
-            renderer.setPolygonMode(.{ .line = .{ .width = 1.2 } });
+            vertex2.bind(frame);
+            frame.setPolygonMode(.{ .line = .{ .width = 1.2 } });
         }
 
         if (window.keyboard.get(.escape) == .press) {
@@ -196,15 +196,16 @@ pub fn main(init: std.process.Init) !void {
 
         const mv = projection.mul(view);
 
-        mesh.bind(renderer);
-        push_constants.push(renderer, .{ .mvp = mv.mul(model) });
-        mesh.draw(renderer);
-        push_constants.push(renderer, .{ .mvp = mv.mul(model2) });
-        mesh.draw(renderer);
+        mesh.bind(frame);
+        push_constants.push(frame, .{ .mvp = mv.mul(model) });
+        mesh.draw(frame);
+        push_constants.push(frame, .{ .mvp = mv.mul(model2) });
+        mesh.draw(frame);
 
-        try renderer.submit(window.size);
+        try frame.end();
+        try renderer.submit(frame);
 
-        if (window.keyboard.isDown(.b)) std.log.info("fps: {d}", .{fps});
+        if (window.keyboard.isDown(.b)) std.log.info("fps: {d}, dt: {d}", .{ fps, delta_time });
     }
 }
 
