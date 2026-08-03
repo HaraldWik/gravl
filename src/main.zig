@@ -87,6 +87,8 @@ pub fn main(init: std.process.Init) !void {
         },
     });
     defer window.close();
+    try window.setMaxSize(.{ .width = 1200, .height = 675 });
+
     try window.setPointerVisible(false);
     try window.setPointerConstraint(.locked);
     try window.setPointerRelative(true);
@@ -179,7 +181,7 @@ pub fn main(init: std.process.Init) !void {
         switch (window.pointer.movement) {
             .position => {},
             .relative => |relative| {
-                // if (relative.dx + relative.dy != 0) std.log.info("{any}", .{relative});
+                if (relative.dx + relative.dy != 0) std.log.info("{any}", .{relative});
                 camera.look(@floatCast(relative.dx), @floatCast(relative.dy));
             },
         }
