@@ -6,21 +6,11 @@ const vk = @import("vulkan");
 const Device = @import("Device.zig");
 
 handle: vk.ShaderEXT,
-stage: Stage,
-
-pub const Stage = enum(vk.Flags) {
-    none = 0x00000000,
-    vertex = 0x00000001,
-    tessellation_control = 0x00000002,
-    tessellation_evaluation = 0x00000004,
-    geometry = 0x00000008,
-    fragment = 0x00000010,
-    compute = 0x00000020,
-};
+stage: vk.ShaderStageFlags,
 
 pub const Description = struct {
-    stage: Stage,
-    next_stage: Stage = .none,
+    stage: vk.ShaderStageFlags,
+    next_stage: vk.ShaderStageFlags = .{},
     source: []const u8,
     entry_name: [*:0]const u8 = "main",
     push_constant_ranges: []const vk.PushConstantRange = &.{},
@@ -33,8 +23,8 @@ pub fn init(gpa: std.mem.Allocator, device: Device, description: Description) In
     std.debug.assert(magic == 0x7230203);
 
     const create_info: *const vk.ShaderCreateInfoEXT = &.{
-        .stage = @bitCast(@intFromEnum(description.stage)),
-        .next_stage = @bitCast(@intFromEnum(description.next_stage)),
+        .stage = description.stage,
+        .next_stage = description.next_stage,
         .code_type = .spirv_ext,
         .code_size = description.source.len,
         .p_code = @ptrCast(description.source.ptr),

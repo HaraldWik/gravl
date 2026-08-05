@@ -50,21 +50,6 @@ pub fn init(comptime T: type, gpa: std.mem.Allocator, physical_device: PhysicalD
     @memcpy(dst[0..data.len], data);
 
     device.proxy.unmapMemory(memory);
-    //     const memory_index = findMemoryType(
-    //     physical_device.memory_properties,
-    //     requirements.memory_type_bits,
-    //     .{
-    //         .host_visible_bit = true,
-    //         .host_coherent_bit = true,
-    //     },
-
-    //     const alloc_info: vk.MemoryAllocateInfo = .{
-    //     .allocation_size = requirements.size,
-    //     .memory_type_index = memory_index,
-    // };
-
-    // const memory = try device.allocateMemory(&alloc_info, allocator);
-    // );
 
     return .{
         .handle = handle,

@@ -252,7 +252,7 @@ pub const Matrix4 = extern struct {
 
     pub fn perspectiveFovLh(fovy: f32, aspect: f32, near: f32, far: f32) Matrix4 {
         assert(near > 0.0 and far > 0.0);
-        // assert(!math.approxEqAbs(f32, far, near, 0.001));
+        assert(!math.approxEqAbs(f32, far, near, 0.001));
         // assert(!math.approxEqAbs(f32, aspect, 0.0, 0.01));
 
         const h = 1.0 / @tan(fovy * 0.5);

@@ -209,305 +209,6 @@ pub fn resize(self: *Renderer, size: Window.Size) !void {
     );
 }
 
-pub const ShaderStage = ShaderObject.Stage;
-
-pub fn Shader(stage: ShaderStage) type {
-    const default_next_stage: ShaderStage = switch (stage) {
-        .none => .none,
-        .vertex => .fragment,
-        .tessellation_control => .tessellation_evaluation,
-        .tessellation_evaluation => .geometry,
-        .geometry => .fragment,
-        .fragment => .none,
-        .compute => .none,
-    };
-
-    return struct {
-        const Self = @This();
-
-        object: ShaderObject,
-
-        pub const InitOptions = struct {
-            next_stage: ShaderStage = default_next_stage,
-            entry_name: [*:0]const u8 = "main",
-        };
-
-        pub const InitError = ShaderObject.InitError;
-
-        pub fn initFromSlice(renderer: Renderer, source: []const u8, options: InitOptions) InitError!Self {
-            const shader_object: ShaderObject = try .init(renderer.gpa, renderer.device, .{
-                .stage = stage,
-                .next_stage = options.next_stage,
-                .source = source,
-                .entry_name = options.entry_name,
-            });
-
-            return .{ .object = shader_object };
-        }
-
-        pub fn initFromSliceWithPushConstants(renderer: Renderer, source: []const u8, options: InitOptions, push_constants: anytype) InitError!Self {
-            const push_constant_range: vk.PushConstantRange = @field(push_constants, "push_constant_range");
-
-            const shader_object: ShaderObject = try .init(renderer.gpa, renderer.device, .{
-                .stage = stage,
-                .next_stage = options.next_stage,
-                .source = source,
-                .entry_name = options.entry_name,
-                .push_constant_ranges = &.{push_constant_range},
-            });
-
-            return .{ .object = shader_object };
-        }
-
-        pub fn deinit(self: Self, renderer: Renderer) void {
-            self.object.deinit(renderer.gpa, renderer.device);
-        }
-
-        pub fn bind(self: Self, frame: Frame) void {
-            frame.device.proxy.cmdBindShadersEXT(
-                frame.command_buffer,
-                &.{@bitCast(@intFromEnum(stage))},
-                &.{self.object.handle},
-            );
-        }
-    };
-}
-
-pub fn PushConstants(comptime Value: type) type {
-    switch (@typeInfo(Value)) {
-        .@"struct" => |s| {
-            if (s.layout != .@"extern") @compileError("expected extern struct layout for push constants, found '" ++ @tagName(s.layout) ++ "' in '" ++ @typeName(Value) ++ "'");
-        },
-        else => |info| {
-            @compileError("expected extern struct for push constants, found '" ++ @tagName(info) ++ " in '" ++ @typeName(Value) ++ "'");
-        },
-    }
-
-    const push_constant_range: vk.PushConstantRange = .{
-        .stage_flags = .{ .vertex_bit = true },
-        .offset = 0,
-        .size = @sizeOf(Value),
-    };
-
-    return struct {
-        const Self = @This();
-
-        layout: vk.PipelineLayout,
-        comptime push_constant_range: vk.PushConstantRange = push_constant_range,
-
-        pub fn init(renderer: Renderer) !Self {
-            const layout_create_info = vk.PipelineLayoutCreateInfo{
-                .push_constant_range_count = 1,
-                .p_push_constant_ranges = @ptrCast(&push_constant_range),
-            };
-
-            const layout = try renderer.device.proxy.createPipelineLayout(&layout_create_info, @ptrCast(@alignCast(renderer.gpa.ptr)));
-
-            return .{ .layout = layout };
-        }
-
-        pub fn deinit(self: Self, renderer: Renderer) void {
-            renderer.device.proxy.destroyPipelineLayout(self.layout, @ptrCast(@alignCast(renderer.gpa.ptr)));
-        }
-
-        pub fn push(self: Self, frame: Frame, value: Value) void {
-            frame.device.proxy.cmdPushConstants(
-                frame.command_buffer,
-                self.layout,
-                push_constant_range.stage_flags,
-                push_constant_range.offset,
-                push_constant_range.size,
-                &value,
-            );
-        }
-    };
-}
-
-/// Creates a mesh type with compile-time generated vertex input layout.
-///
-/// `streams` defines the vertex buffer streams used by the mesh.
-/// Each stream becomes a Vulkan vertex binding and its fields become attributes.
-///
-/// `IndexType` defines the index buffer type (`u8`, `u16`, or `u32`).
-/// Use `null` for a non-indexed mesh.
-pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
-    const VertexData = init: {
-        var field_types: [streams.len]type = undefined;
-        for (&field_types, streams) |*t, VertexType| {
-            t.* = []const VertexType;
-        }
-        break :init @Tuple(&field_types);
-    };
-
-    const has_indices = if (opt_index_type) |IndexType| switch (IndexType) {
-        u8, u16, u32 => true,
-        else => @compileError("expected index type u8, u16, u32, or null, found " ++ @typeName(IndexType)),
-    } else false;
-
-    const IndexType = opt_index_type orelse u0;
-
-    return struct {
-        const Self = @This();
-
-        buffers: [streams.len]Buffer,
-        index_buffer: if (has_indices) Buffer else void,
-
-        count: u32, // vertex or index count
-        topology: Topology,
-        primitive_restart: bool,
-
-        pub const bindings: [streams.len]vk.VertexInputBindingDescription2EXT = bindings: {
-            var descriptions: [streams.len]vk.VertexInputBindingDescription2EXT = undefined;
-            for (&descriptions, streams, 0..) |*description, VertexType, i| {
-                description.* = .{
-                    .binding = i,
-                    .stride = @sizeOf(VertexType),
-                    .input_rate = .vertex,
-                    .divisor = 1,
-                };
-            }
-
-            break :bindings descriptions;
-        };
-
-        const attribute_count = count: {
-            var count: usize = 0;
-            for (streams) |VertexType| count += std.meta.fields(VertexType).len;
-            break :count count;
-        };
-
-        pub const attributes: [attribute_count]vk.VertexInputAttributeDescription2EXT = attributes: {
-            var descriptions: [attribute_count]vk.VertexInputAttributeDescription2EXT = undefined;
-
-            var attribute_index: usize = 0;
-
-            for (streams, 0..) |VertexType, binding| {
-                for (std.meta.fields(VertexType)) |field| {
-                    descriptions[attribute_index] = .{
-                        .location = attribute_index,
-                        .binding = binding,
-                        .format = formatOf(field.type),
-                        .offset = @offsetOf(VertexType, field.name),
-                    };
-
-                    attribute_index += 1;
-                }
-            }
-            break :attributes descriptions;
-        };
-
-        pub const Topology = vk.PrimitiveTopology;
-
-        pub const Description = struct {
-            vertices: VertexData,
-            indices: []const IndexType = &.{},
-            topology: Topology = .triangle_list,
-            primitive_restart: bool = false,
-        };
-
-        pub fn init(renderer: Renderer, desc: Description) !Self {
-            var buffers: [streams.len]Buffer = undefined;
-            inline for (streams, 0..) |T, i| {
-                buffers[i] = try .init(T, renderer.gpa, renderer.physical_device, renderer.device, .vertex, desc.vertices[i]);
-            }
-
-            const index_buffer = if (has_indices) try Buffer.init(IndexType, renderer.gpa, renderer.physical_device, renderer.device, .index, desc.indices) else void{};
-
-            const count: u32 = @truncate(if (has_indices) desc.indices.len else desc.vertices[0].len);
-
-            return .{
-                .buffers = buffers,
-                .index_buffer = index_buffer,
-                .count = count,
-                .topology = desc.topology,
-                .primitive_restart = desc.primitive_restart,
-            };
-        }
-
-        pub fn deinit(self: Self, renderer: Renderer) void {
-            renderer.device.proxy.deviceWaitIdle() catch {};
-            if (has_indices) self.index_buffer.deinit(renderer.gpa, renderer.device);
-            for (self.buffers) |buffer| buffer.deinit(renderer.gpa, renderer.device);
-        }
-
-        pub fn bind(self: Self, frame: Frame) void {
-            frame.device.proxy.cmdSetVertexInputEXT(
-                frame.command_buffer,
-                bindings[0..],
-                attributes[0..],
-            );
-
-            var handles: [streams.len]vk.Buffer = undefined;
-            for (&handles, self.buffers) |*handle, buffer| {
-                handle.* = buffer.handle;
-            }
-
-            const offsets: [streams.len]vk.DeviceSize = @splat(0);
-
-            frame.device.proxy.cmdBindVertexBuffers(
-                frame.command_buffer,
-                0,
-                &handles,
-                &offsets,
-            );
-
-            if (has_indices) frame.device.proxy.cmdBindIndexBuffer(
-                frame.command_buffer,
-                self.index_buffer.handle,
-                0,
-                switch (IndexType) {
-                    u8 => .uint8,
-                    u16 => .uint16,
-                    u32 => .uint32,
-                    else => unreachable,
-                },
-            );
-        }
-
-        pub fn draw(self: Self, frame: Frame) void {
-            frame.device.proxy.cmdSetPrimitiveTopology(
-                frame.command_buffer,
-                self.topology,
-            );
-
-            frame.device.proxy.cmdSetPrimitiveRestartEnable(
-                frame.command_buffer,
-                @enumFromInt(@intFromBool(self.primitive_restart)),
-            );
-
-            if (has_indices) {
-                frame.device.proxy.cmdDrawIndexed(frame.command_buffer, self.count, 1, 0, 0, 0);
-            } else {
-                frame.device.proxy.cmdDraw(frame.command_buffer, self.count, 1, 0, 0);
-            }
-        }
-
-        fn formatOf(comptime T: type) vk.Format {
-            switch (@typeInfo(T)) {
-                .float => return switch (@bitSizeOf(T)) {
-                    32 => .r32_sfloat,
-                    64 => .r64_sfloat,
-                    else => @compileError("unsupported float size"),
-                },
-                .array => |array| {
-                    if (array.child != f32) {
-                        @compileError("unly f32 arrays are supported");
-                    }
-
-                    return switch (array.len) {
-                        2 => .r32g32_sfloat,
-                        3 => .r32g32b32_sfloat,
-                        4 => .r32g32b32a32_sfloat,
-                        else => @compileError("unsupported vector size"),
-                    };
-                },
-
-                else => @compileError("unsupported vertex attribute type"),
-            }
-        }
-    };
-}
-
 pub const Frame = struct {
     device: Device,
     image: vk.Image,
@@ -715,15 +416,6 @@ pub const Frame = struct {
         try device.proxy.endCommandBuffer(command_buffer);
     }
 
-    pub const PolygonMode = union(vk.PolygonMode) {
-        fill,
-        line: struct {
-            width: f32 = 1.0,
-        },
-        point,
-        fill_rectangle_nv,
-    };
-
     pub fn bindDefaultState(self: Frame) void {
         const device = self.device;
         const command_buffer = self.command_buffer;
@@ -735,7 +427,7 @@ pub const Frame = struct {
 
         device.proxy.cmdSetCullMode(
             command_buffer,
-            .{ .front_bit = true },
+            .{ .back_bit = true },
         );
         device.proxy.cmdSetFrontFace(command_buffer, .counter_clockwise);
 
@@ -761,13 +453,9 @@ pub const Frame = struct {
 
         // depth/stencil
         device.proxy.cmdSetDepthTestEnable(command_buffer, .true);
-
         device.proxy.cmdSetDepthWriteEnable(command_buffer, .true);
-
         device.proxy.cmdSetDepthCompareOp(command_buffer, .less);
-
         device.proxy.cmdSetDepthBoundsTestEnable(command_buffer, .false);
-
         device.proxy.cmdSetStencilTestEnable(command_buffer, .false);
 
         // blending
@@ -804,6 +492,15 @@ pub const Frame = struct {
         device.proxy.cmdSetLogicOpEnableEXT(command_buffer, .false);
     }
 
+    pub const PolygonMode = union(vk.PolygonMode) {
+        fill,
+        line: struct {
+            width: f32 = 1.0,
+        },
+        point,
+        fill_rectangle_nv,
+    };
+
     pub fn setPolygonMode(self: Frame, mode: PolygonMode) void {
         const mode_enum = std.meta.activeTag(mode);
         self.device.proxy.cmdSetPolygonModeEXT(self.command_buffer, mode_enum);
@@ -813,4 +510,331 @@ pub const Frame = struct {
             else => {},
         }
     }
+
+    pub const CullMode = enum(vk.Flags) {
+        front = 0,
+        back = 1,
+    };
+
+    pub fn setCullMode(self: Frame, mode: CullMode) void {
+        self.device.proxy.cmdSetCullMode(self.command_buffer, @bitCast(@intFromEnum(mode)));
+    }
 };
+
+pub const ShaderStage = enum(vk.Flags) {
+    none = 0x00000000,
+    vertex = 0x00000001,
+    tessellation_control = 0x00000002,
+    tessellation_evaluation = 0x00000004,
+    geometry = 0x00000008,
+    fragment = 0x00000010,
+    compute = 0x00000020,
+
+    pub const Mask = packed struct(vk.Flags) {
+        vertex: bool = false,
+        tessellation_control: bool = false,
+        tessellation_evaluation: bool = false,
+        geometry: bool = false,
+        fragment: bool = false,
+        compute: bool = false,
+        _pad: u26 = 0,
+    };
+};
+
+pub fn Shader(stage: ShaderStage) type {
+    const default_next_stage: ShaderStage = switch (stage) {
+        .none => .none,
+        .vertex => .fragment,
+        .tessellation_control => .tessellation_evaluation,
+        .tessellation_evaluation => .geometry,
+        .geometry => .fragment,
+        .fragment => .none,
+        .compute => .none,
+    };
+
+    return struct {
+        const Self = @This();
+
+        object: ShaderObject,
+
+        pub const InitOptions = struct {
+            next_stage: ShaderStage = default_next_stage,
+            entry_name: [*:0]const u8 = "main",
+        };
+
+        pub const InitError = ShaderObject.InitError;
+
+        pub fn initFromSlice(renderer: Renderer, source: []const u8, options: InitOptions) InitError!Self {
+            const shader_object: ShaderObject = try .init(renderer.gpa, renderer.device, .{
+                .stage = stage,
+                .next_stage = options.next_stage,
+                .source = source,
+                .entry_name = options.entry_name,
+            });
+
+            return .{ .object = shader_object };
+        }
+
+        pub fn initFromSliceWithPushConstants(renderer: Renderer, source: []const u8, options: InitOptions, push_constant_range: PushConstantRange) InitError!Self {
+            const shader_object: ShaderObject = try .init(renderer.gpa, renderer.device, .{
+                .stage = @bitCast(@intFromEnum(stage)),
+                .next_stage = @bitCast(@intFromEnum(options.next_stage)),
+                .source = source,
+                .entry_name = options.entry_name,
+                .push_constant_ranges = &.{push_constant_range},
+            });
+
+            return .{ .object = shader_object };
+        }
+
+        pub fn deinit(self: Self, renderer: Renderer) void {
+            self.object.deinit(renderer.gpa, renderer.device);
+        }
+
+        pub fn bind(self: Self, frame: Frame) void {
+            frame.device.proxy.cmdBindShadersEXT(
+                frame.command_buffer,
+                &.{@bitCast(@intFromEnum(stage))},
+                &.{self.object.handle},
+            );
+        }
+    };
+}
+
+pub const PushConstantRange = vk.PushConstantRange;
+pub fn PushConstant(comptime Value: type, shader_stages: ShaderStage.Mask) type {
+    switch (@typeInfo(Value)) {
+        .@"struct" => |s| {
+            if (s.layout != .@"extern") @compileError("expected extern struct layout for push constants, found '" ++ @tagName(s.layout) ++ "' in '" ++ @typeName(Value) ++ "'");
+        },
+        else => |info| {
+            @compileError("expected extern struct for push constants, found '" ++ @tagName(info) ++ " in '" ++ @typeName(Value) ++ "'");
+        },
+    }
+
+    const range: vk.PushConstantRange = .{
+        .stage_flags = @bitCast(shader_stages),
+        .offset = 0,
+        .size = @sizeOf(Value),
+    };
+
+    return struct {
+        const Self = @This();
+
+        layout: vk.PipelineLayout,
+
+        comptime stages: ShaderStage.Mask = shader_stages,
+        comptime range: vk.PushConstantRange = range,
+
+        pub fn init(renderer: Renderer) !Self {
+            const layout_create_info = vk.PipelineLayoutCreateInfo{
+                .push_constant_range_count = 1,
+                .p_push_constant_ranges = @ptrCast(&range),
+            };
+
+            const layout = try renderer.device.proxy.createPipelineLayout(&layout_create_info, @ptrCast(@alignCast(renderer.gpa.ptr)));
+
+            return .{ .layout = layout };
+        }
+
+        pub fn deinit(self: Self, renderer: Renderer) void {
+            renderer.device.proxy.destroyPipelineLayout(self.layout, @ptrCast(@alignCast(renderer.gpa.ptr)));
+        }
+
+        pub fn push(self: Self, frame: Frame, value: Value) void {
+            frame.device.proxy.cmdPushConstants(
+                frame.command_buffer,
+                self.layout,
+                range.stage_flags,
+                range.offset,
+                range.size,
+                &value,
+            );
+        }
+    };
+}
+
+/// Creates a mesh type with compile-time generated vertex input layout.
+///
+/// `streams` defines the vertex buffer streams used by the mesh.
+/// Each stream becomes a Vulkan vertex binding and its fields become attributes.
+///
+/// `IndexType` defines the index buffer type (`u8`, `u16`, or `u32`).
+/// Use `null` for a non-indexed mesh.
+pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
+    const VertexData = init: {
+        var field_types: [streams.len]type = undefined;
+        for (&field_types, streams) |*t, VertexType| {
+            t.* = []const VertexType;
+        }
+        break :init @Tuple(&field_types);
+    };
+
+    const has_indices = if (opt_index_type) |IndexType| switch (IndexType) {
+        u8, u16, u32 => true,
+        else => @compileError("expected index type u8, u16, u32, or null, found " ++ @typeName(IndexType)),
+    } else false;
+
+    const IndexType = opt_index_type orelse u0;
+
+    return struct {
+        const Self = @This();
+
+        buffers: [streams.len]Buffer,
+        index_buffer: if (has_indices) Buffer else void,
+
+        count: u32, // vertex or index count
+        topology: Topology,
+        primitive_restart: bool,
+
+        pub const bindings: [streams.len]vk.VertexInputBindingDescription2EXT = bindings: {
+            var descriptions: [streams.len]vk.VertexInputBindingDescription2EXT = undefined;
+            for (&descriptions, streams, 0..) |*description, VertexType, i| {
+                description.* = .{
+                    .binding = i,
+                    .stride = @sizeOf(VertexType),
+                    .input_rate = .vertex,
+                    .divisor = 1,
+                };
+            }
+
+            break :bindings descriptions;
+        };
+
+        const attribute_count = count: {
+            var count: usize = 0;
+            for (streams) |VertexType| count += std.meta.fields(VertexType).len;
+            break :count count;
+        };
+
+        pub const attributes: [attribute_count]vk.VertexInputAttributeDescription2EXT = attributes: {
+            var descriptions: [attribute_count]vk.VertexInputAttributeDescription2EXT = undefined;
+
+            var attribute_index: usize = 0;
+
+            for (streams, 0..) |VertexType, binding| {
+                for (std.meta.fields(VertexType)) |field| {
+                    descriptions[attribute_index] = .{
+                        .location = attribute_index,
+                        .binding = binding,
+                        .format = formatOf(field.type),
+                        .offset = @offsetOf(VertexType, field.name),
+                    };
+
+                    attribute_index += 1;
+                }
+            }
+            break :attributes descriptions;
+        };
+
+        pub const Topology = vk.PrimitiveTopology;
+
+        pub const Description = struct {
+            vertices: VertexData,
+            indices: []const IndexType = &.{},
+            topology: Topology = .triangle_list,
+            primitive_restart: bool = false,
+        };
+
+        pub fn init(renderer: Renderer, desc: Description) !Self {
+            var buffers: [streams.len]Buffer = undefined;
+            inline for (streams, 0..) |T, i| {
+                buffers[i] = try .init(T, renderer.gpa, renderer.physical_device, renderer.device, .vertex, desc.vertices[i]);
+            }
+
+            const index_buffer = if (has_indices) try Buffer.init(IndexType, renderer.gpa, renderer.physical_device, renderer.device, .index, desc.indices) else void{};
+
+            const count: u32 = @truncate(if (has_indices) desc.indices.len else desc.vertices[0].len);
+
+            return .{
+                .buffers = buffers,
+                .index_buffer = index_buffer,
+                .count = count,
+                .topology = desc.topology,
+                .primitive_restart = desc.primitive_restart,
+            };
+        }
+
+        pub fn deinit(self: Self, renderer: Renderer) void {
+            renderer.device.proxy.deviceWaitIdle() catch {};
+            if (has_indices) self.index_buffer.deinit(renderer.gpa, renderer.device);
+            for (self.buffers) |buffer| buffer.deinit(renderer.gpa, renderer.device);
+        }
+
+        pub fn bind(self: Self, frame: Frame) void {
+            frame.device.proxy.cmdSetVertexInputEXT(
+                frame.command_buffer,
+                bindings[0..],
+                attributes[0..],
+            );
+
+            var handles: [streams.len]vk.Buffer = undefined;
+            for (&handles, self.buffers) |*handle, buffer| {
+                handle.* = buffer.handle;
+            }
+
+            const offsets: [streams.len]vk.DeviceSize = @splat(0);
+
+            frame.device.proxy.cmdBindVertexBuffers(
+                frame.command_buffer,
+                0,
+                &handles,
+                &offsets,
+            );
+
+            if (has_indices) frame.device.proxy.cmdBindIndexBuffer(
+                frame.command_buffer,
+                self.index_buffer.handle,
+                0,
+                switch (IndexType) {
+                    u8 => .uint8,
+                    u16 => .uint16,
+                    u32 => .uint32,
+                    else => unreachable,
+                },
+            );
+        }
+
+        pub fn draw(self: Self, frame: Frame) void {
+            frame.device.proxy.cmdSetPrimitiveTopology(
+                frame.command_buffer,
+                self.topology,
+            );
+
+            frame.device.proxy.cmdSetPrimitiveRestartEnable(
+                frame.command_buffer,
+                @enumFromInt(@intFromBool(self.primitive_restart)),
+            );
+
+            if (has_indices) {
+                frame.device.proxy.cmdDrawIndexed(frame.command_buffer, self.count, 1, 0, 0, 0);
+            } else {
+                frame.device.proxy.cmdDraw(frame.command_buffer, self.count, 1, 0, 0);
+            }
+        }
+
+        fn formatOf(comptime T: type) vk.Format {
+            switch (@typeInfo(T)) {
+                .float => return switch (@bitSizeOf(T)) {
+                    32 => .r32_sfloat,
+                    64 => .r64_sfloat,
+                    else => @compileError("unsupported float size"),
+                },
+                .array => |array| {
+                    if (array.child != f32) {
+                        @compileError("unly f32 arrays are supported");
+                    }
+
+                    return switch (array.len) {
+                        2 => .r32g32_sfloat,
+                        3 => .r32g32b32_sfloat,
+                        4 => .r32g32b32a32_sfloat,
+                        else => @compileError("unsupported vector size"),
+                    };
+                },
+
+                else => @compileError("unsupported vertex attribute type"),
+            }
+        }
+    };
+}

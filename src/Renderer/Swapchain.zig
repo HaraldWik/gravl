@@ -106,6 +106,8 @@ pub const Depth = struct {
 
         try device.proxy.bindImageMemory(image, memory, 0);
 
+        // TODO: add transition thingie (needs immediate command buffer)
+
         const image_view_create_info: *const vk.ImageViewCreateInfo = &.{
             .image = image,
             .view_type = .@"2d",
