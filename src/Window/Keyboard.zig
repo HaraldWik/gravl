@@ -465,3 +465,128 @@ pub fn fromXkb(symbol: xkb.Keysym) ?Key {
         else => null,
     };
 }
+
+pub fn fromCocoa(key_code: u32) ?Key {
+    return switch (key_code) {
+        // Letters
+        0 => .a,
+        11 => .b,
+        8 => .c,
+        2 => .d,
+        14 => .e,
+        3 => .f,
+        5 => .g,
+        4 => .h,
+        34 => .i,
+        38 => .j,
+        40 => .k,
+        37 => .l,
+        46 => .m,
+        45 => .n,
+        31 => .o,
+        35 => .p,
+        12 => .q,
+        15 => .r,
+        1 => .s,
+        17 => .t,
+        32 => .u,
+        9 => .v,
+        13 => .w,
+        7 => .x,
+        16 => .y,
+        6 => .z,
+
+        // Numbers
+        29 => .@"0",
+        18 => .@"1",
+        19 => .@"2",
+        20 => .@"3",
+        21 => .@"4",
+        23 => .@"5",
+        22 => .@"6",
+        26 => .@"7",
+        28 => .@"8",
+        25 => .@"9",
+
+        // Function keys
+        122 => .f1,
+        120 => .f2,
+        99 => .f3,
+        118 => .f4,
+        96 => .f5,
+        97 => .f6,
+        98 => .f7,
+        100 => .f8,
+        101 => .f9,
+        109 => .f10,
+        103 => .f11,
+        111 => .f12,
+
+        // Modifiers
+        56 => .left_shift,
+        60 => .right_shift,
+        59 => .left_control,
+        62 => .right_control,
+        58 => .left_alt,
+        61 => .right_alt,
+        55 => .left_super,
+        54 => .right_super,
+
+        // Navigation
+        53 => .escape,
+        36 => .enter,
+        48 => .tab,
+        51 => .backspace,
+        49 => .space,
+
+        114 => .insert,
+        117 => .delete,
+        115 => .home,
+        119 => .end,
+        116 => .page_up,
+        121 => .page_down,
+
+        126 => .up,
+        125 => .down,
+        123 => .left,
+        124 => .right,
+
+        // Punctuation
+        27 => .minus,
+        24 => .equal,
+        33 => .left_bracket,
+        30 => .right_bracket,
+        41 => .semicolon,
+        39 => .apostrophe,
+        43 => .comma,
+        47 => .period,
+        44 => .slash,
+        42 => .backslash,
+        50 => .grave,
+
+        // Keypad
+        82 => .keypad_0,
+        83 => .keypad_1,
+        84 => .keypad_2,
+        85 => .keypad_3,
+        86 => .keypad_4,
+        87 => .keypad_5,
+        88 => .keypad_6,
+        89 => .keypad_7,
+        91 => .keypad_8,
+        92 => .keypad_9,
+        69 => .keypad_add,
+        78 => .keypad_subtract,
+        67 => .keypad_multiply,
+        75 => .keypad_divide,
+        76 => .keypad_enter,
+        65 => .keypad_decimal,
+
+        // Lock keys
+        57 => .caps_lock,
+        71 => .num_lock,
+        107 => .scroll_lock,
+
+        else => null,
+    };
+}

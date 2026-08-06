@@ -63,6 +63,10 @@ pub fn deinit(self: Buffer, gpa: std.mem.Allocator, device: Device) void {
     device.proxy.freeMemory(self.memory, @ptrCast(@alignCast(gpa.ptr)));
 }
 
+pub fn getAddress(self: Buffer, device: Device) vk.DeviceAddress {
+    return device.proxy.getBufferDeviceAddress(&.{ .buffer = self.handle });
+}
+
 fn findMemoryType(type_filter: u32, properties: vk.MemoryPropertyFlags, memory_properties: vk.PhysicalDeviceMemoryProperties) u32 {
     for (0..memory_properties.memory_type_count) |i| {
         if ((type_filter & (@as(u32, 1) << @intCast(i))) != 0 and

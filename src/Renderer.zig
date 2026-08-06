@@ -36,7 +36,7 @@ command_handler: CommandHandler,
 
 const libvulkan = switch (builtin.os.tag) {
     .windows => "vulkan-1.dll",
-    .linux, .freebsd, .netbsd, .openbsd => "libvulkan.so.1",
+    .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => "libvulkan.so.1",
     .macos => "libvulkan.1.dylib",
     else => @compileError("unsupported platform"),
 };
@@ -53,7 +53,7 @@ else
 
 pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
     const platform_extensions: []const [*:0]const u8 = switch (builtin.os.tag) {
-        .linux, .freebsd, .netbsd, .openbsd => switch (window.inner) {
+        .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => switch (window.inner) {
             .wayland => &.{
                 vk.extensions.khr_surface.name,
                 vk.extensions.khr_wayland_surface.name,

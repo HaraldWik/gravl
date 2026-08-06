@@ -16,7 +16,7 @@ pointer: Pointer = .{},
 keyboard: Keyboard = .{},
 
 pub const Inner = switch (native_os) {
-    .linux, .freebsd, .netbsd, .openbsd => union(XdgSessionType) {
+    .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => union(XdgSessionType) {
         wayland: @import("Window/Wayland.zig"),
         x11: @import("Window/Xlib.zig"),
     },
@@ -159,7 +159,7 @@ pub const OpenOptions = struct {
 
 pub fn open(self: *Window, gpa: std.mem.Allocator, minimal: std.process.Init.Minimal, options: OpenOptions) !void {
     self.inner = switch (native_os) {
-        .linux, .freebsd, .netbsd, .openbsd => blk: {
+        .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => blk: {
             const session_type = XdgSessionType.detect(minimal) orelse .x11;
             switch (session_type) {
                 inline else => |inline_session_type| break :blk @unionInit(Inner, @tagName(inline_session_type), undefined),
@@ -253,7 +253,7 @@ pub fn setPointerRelative(self: *Window, enabled: bool) !void {
 
 fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {
     switch (native_os) {
-        .linux, .freebsd, .netbsd, .openbsd => switch (self.inner) {
+        .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => switch (self.inner) {
             inline else => |*inner| {
                 const function = @field(@TypeOf(inner.*), @tagName(function_name));
                 return @call(.always_inline, function, .{ inner, self } ++ args);

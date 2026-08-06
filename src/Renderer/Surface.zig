@@ -21,7 +21,7 @@ const Win32Error = vk.InstanceWrapper.CreateWin32SurfaceKHRError;
 const CocoaError = vk.InstanceWrapper.CreateMacOsSurfaceMVKError;
 
 pub const InitError = switch (builtin.os.tag) {
-    .linux, .freebsd, .netbsd, .openbsd => WaylandError || XError,
+    .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => WaylandError || XError,
     .windows => Win32Error,
     .macos => CocoaError,
     else => error{},
@@ -29,7 +29,7 @@ pub const InitError = switch (builtin.os.tag) {
 
 pub fn init(gpa: std.mem.Allocator, instance: Instance, window: *Window) InitError!Surface {
     return switch (builtin.os.tag) {
-        .linux, .freebsd, .netbsd, .openbsd => switch (window.inner) {
+        .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => switch (window.inner) {
             .wayland => .initWayland(gpa, instance, &window.inner.wayland),
             .x11 => .initXlib(gpa, instance, &window.inner.x11),
         },
