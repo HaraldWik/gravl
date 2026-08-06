@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <QuartzCore/CAMetalLayer.h>
 
 typedef enum {
     EVENT_CLOSE,
@@ -169,38 +170,11 @@ bool applicationPollEvent(void *app_handle, Event *event) {
 }
 
 void *windowCreate(void *app_handle, WindowCreateInfo info) {
-    NSApplication *app = (__bridge NSApplication *)app_handle;
-
-    NSRect rect;
-
-    if (info.has_position) {
-        rect = NSMakeRect(
-            info.x,
-            info.y,
-            info.width,
-            info.height
-        );
-    } else {
-        rect = NSMakeRect(
-            0,
-            0,
-            info.width,
-            info.height
-        );
-    }
-
     NSWindow *window = [[NSWindow alloc]
         initWithContentRect:rect
-        styleMask:
-            NSWindowStyleMaskTitled |
-            NSWindowStyleMaskClosable |
-            NSWindowStyleMaskResizable
+        styleMask:...
         backing:NSBackingStoreBuffered
         defer:NO];
-
-    if (!info.has_position) {
-        [window center];
-    }
 
     NSView *view = [window contentView];
 
@@ -209,12 +183,7 @@ void *windowCreate(void *app_handle, WindowCreateInfo info) {
     CAMetalLayer *layer = [CAMetalLayer layer];
     [view setLayer:layer];
 
-    CocoaWindow *out = malloc(sizeof(CocoaWindow));
-    out->window = (__bridge_retained void *)window;
-    out->view = (__bridge void *)view;
-    out->metal_layer = (__bridge void *)layer;
-
-    return out;
+    return (__bridge_retained void *)window;
 }
 
 void windowDestroy(void *handle) {
@@ -225,6 +194,11 @@ void windowDestroy(void *handle) {
 void *windowGetView(void *handle) {
     NSWindow *window = (__bridge NSWindow *)handle;
     return (__bridge void *)[window contentView];
+}
+
+void *windowGetMetalLayer(void *handle) {
+    NSWindow *window = (__bridge NSWindow *)handle;
+    return (__bridge void *)[[window contentView] layer];
 }
 
 void windowSetTitle(void *handle, const char *title) {

@@ -6,9 +6,10 @@ const std = @import("std");
 
 const Window = @import("../Window.zig");
 
-app: *cocoa.Application,
-window: *cocoa.Window,
-view: *cocoa.View,
+app: *cocoa.NSApplication,
+window: *cocoa.NSWindow,
+view: *cocoa.NSView,
+metal_layer: *cocoa.CAMetalLayer,
 
 pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
     _ = window;
@@ -25,7 +26,8 @@ pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
     });
     errdefer cocoa.windowDestroy(window_handle);
 
-    const view = cocoa.windowGetView(window_handle);
+    const view = cocoa.windowGetView(window_handle) orelse return error.GetView;
+    const metal_layer = cocoa.windowGetMetalLayer(window_handle) orelse return error.GetMetalLayer;
 
     cocoa.windowSetTitle(window_handle, options.title);
 
@@ -33,6 +35,7 @@ pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
         .app = app,
         .window = window_handle,
         .view = view,
+        .metal_layer = metal_layer,
     };
 }
 
@@ -47,11 +50,11 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
         .close => window.should_close = true,
 
         .resize => {
-            const size = event.resize;
+            const size = event.data.resize;
             window.size = .{ .width = size.width, .height = size.height };
         },
         .move => {
-            const position = event.move;
+            const position = event.data.move;
             window.position = .{ .x = position.x, .y = position.y };
         },
 
@@ -59,7 +62,7 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
         .focus_lost => window.focused = false,
 
         .mouse_move => {
-            const position = event.mouse_move;
+            const position = event.data.mouse_move;
             window.pointer.movement = .{ .position = .{
                 .x = position.x,
                 .y = position.y,
@@ -67,8 +70,8 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
         },
         .mouse_button => {
             const b = &window.pointer.buttons;
-            const state = event.mouse_button.pressed;
-            switch (event.mouse_button.button) {
+            const state = event.data.mouse_button.pressed;
+            switch (event.data.mouse_button.button) {
                 0 => b.left = state,
                 1 => b.right = state,
                 2 => b.middle = state,
@@ -83,26 +86,26 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
             }
         },
         .mouse_scroll => {
-            window.pointer.axis.horizontal += event.mouse_scroll.x;
-            window.pointer.axis.vertical += event.mouse_scroll.y;
+            window.pointer.axis.horizontal += event.data.mouse_scroll.x;
+            window.pointer.axis.vertical += event.data.mouse_scroll.y;
         },
 
         .key_down => {
-            const key = Window.Keyboard.fromCocoa(event.key.key_code) orelse {
-                std.log.err("unknown keycode: {d}", .{event.key.key_code});
+            const key = Window.Keyboard.fromCocoa(event.data.key.key_code) orelse {
+                std.log.err("unknown keycode: {d}", .{event.data.key.key_code});
                 continue;
             };
 
             window.keyboard.press(key);
 
-            if (event.key.repeat) {
+            if (event.data.key.repeat) {
                 window.keyboard.previous.set(@intFromEnum(key));
             }
         },
 
         .key_up => {
-            const key = Window.Keyboard.fromCocoa(event.key.key_code) orelse {
-                std.log.err("unknown keycode: {d}", .{event.key.key_code});
+            const key = Window.Keyboard.fromCocoa(event.data.key.key_code) orelse {
+                std.log.err("unknown keycode: {d}", .{event.data.key.key_code});
                 continue;
             };
 
@@ -110,7 +113,7 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
         },
         .text_input => {
             var writer = options.text orelse continue;
-            const codepoint: u21 = @truncate(event.text_input.codepoint);
+            const codepoint: u21 = @truncate(event.data.text_input.codepoint);
             var buffer: [8]u8 = undefined;
             const utf8 = buffer[0..try std.unicode.utf8Encode(codepoint, buffer)];
             try writer.writeAll(utf8);
@@ -174,8 +177,8 @@ pub fn setPointerRelative(self: *Cocoa, window: *Window, enabled: bool) !void {
 }
 
 const cocoa = struct {
-    pub const Application = opaque {};
-    pub const Window = opaque {
+    pub const NSApplication = opaque {};
+    pub const NSWindow = opaque {
         pub const CreateInfo = extern struct {
             x: f64,
             y: f64,
@@ -184,40 +187,43 @@ const cocoa = struct {
             has_position: bool,
         };
     };
-    pub const View = opaque {};
+    pub const NSView = opaque {};
+    pub const CAMetalLayer = opaque {};
 
-    pub const Event = extern union {
+    pub const Event = extern struct {
         type: EventType,
 
-        resize: extern struct {
-            width: u32,
-            height: u32,
-        },
-        move: extern struct {
-            x: i32,
-            y: i32,
-        },
+        data: extern union {
+            resize: extern struct {
+                width: u32,
+                height: u32,
+            },
+            move: extern struct {
+                x: i32,
+                y: i32,
+            },
 
-        mouse_move: extern struct {
-            x: f64,
-            y: f64,
-        },
-        mouse_button: extern struct {
-            button: u32,
-            pressed: bool,
-        },
-        mouse_scroll: extern struct {
-            x: f64,
-            y: f64,
-        },
+            mouse_move: extern struct {
+                x: f64,
+                y: f64,
+            },
+            mouse_button: extern struct {
+                button: u32,
+                pressed: bool,
+            },
+            mouse_scroll: extern struct {
+                x: f64,
+                y: f64,
+            },
 
-        key: extern struct {
-            key_code: u32,
-            pressed: bool,
-            repeat: bool,
-        },
-        text_input: extern struct {
-            codepoint: u32,
+            key: extern struct {
+                key_code: u32,
+                pressed: bool,
+                repeat: bool,
+            },
+            text_input: extern struct {
+                codepoint: u32,
+            },
         },
 
         pub const EventType = enum(c_int) {
@@ -238,13 +244,15 @@ const cocoa = struct {
             text_input,
         };
     };
-    pub extern fn applicationCreate() *Application;
-    pub extern fn applicationDestroy(app: *Application) void;
 
-    pub extern fn applicationPollEvent(app: *Application, event: *Event) bool;
+    pub extern fn applicationCreate() *NSApplication;
+    pub extern fn applicationDestroy(app: *NSApplication) void;
 
-    pub extern fn windowCreate(app: *Application, create_info: cocoa.Window.CreateInfo) *cocoa.Window;
-    pub extern fn windowDestroy(window: *cocoa.Window) void;
-    pub extern fn windowGetView(window: *cocoa.Window) ?*View;
-    pub extern fn windowSetTitle(window: *cocoa.Window, title: [*:0]const u8) void;
+    pub extern fn applicationPollEvent(app: *NSApplication, event: *Event) bool;
+
+    pub extern fn windowCreate(app: *NSApplication, create_info: NSWindow.CreateInfo) *NSWindow;
+    pub extern fn windowDestroy(window: *NSWindow) void;
+    pub extern fn windowGetView(window: *NSWindow) ?*NSView;
+    pub extern fn windowGetMetalLayer(window: *NSWindow) ?*CAMetalLayer;
+    pub extern fn windowSetTitle(window: *NSWindow, title: [*:0]const u8) void;
 };
