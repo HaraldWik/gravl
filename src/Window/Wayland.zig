@@ -518,7 +518,16 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
             if (self.poll_options.text) |writer| switch (key.state) {
                 .pressed => {
                     var buffer: [8]u8 = undefined;
-                    const len: usize = @intCast(keysym.toUTF8(&buffer, buffer.len));
+                    var len: usize = @intCast(keysym.toUTF8(&buffer, buffer.len));
+
+                    var write: usize = 0;
+                    for (buffer[0..len]) |c| {
+                        if (!std.ascii.isControl(c)) {
+                            buffer[write] = c;
+                            write += 1;
+                        }
+                    }
+                    len = write;
 
                     if (len > 0) {
                         writer.writeAll(buffer[0..len]) catch {};
