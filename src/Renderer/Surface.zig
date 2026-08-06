@@ -15,13 +15,13 @@ const Instance = @import("Instance.zig");
 
 handle: vk.SurfaceKHR,
 
-const WaylandError = vk.InstanceWrapper.CreateWaylandSurfaceKHRError;
-const XError = vk.InstanceWrapper.CreateXcbSurfaceKHRError;
-const Win32Error = vk.InstanceWrapper.CreateWin32SurfaceKHRError;
-const CocoaError = vk.InstanceWrapper.CreateMacOsSurfaceMVKError;
+pub const WaylandError = vk.InstanceWrapper.CreateWaylandSurfaceKHRError;
+pub const XlibError = vk.InstanceWrapper.CreateXlibSurfaceKHRError;
+pub const Win32Error = vk.InstanceWrapper.CreateWin32SurfaceKHRError;
+pub const CocoaError = vk.InstanceWrapper.CreateMacOsSurfaceMVKError;
 
 pub const InitError = switch (builtin.os.tag) {
-    .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => WaylandError || XError,
+    .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => WaylandError || XlibError,
     .windows => Win32Error,
     .macos => CocoaError,
     else => error{},
@@ -53,7 +53,7 @@ fn initWayland(gpa: std.mem.Allocator, instance: Instance, wayland: *Wayland) Wa
     return .{ .handle = handle };
 }
 
-fn initXlib(gpa: std.mem.Allocator, instance: Instance, xlib: *Xlib) XError!Surface {
+fn initXlib(gpa: std.mem.Allocator, instance: Instance, xlib: *Xlib) XlibError!Surface {
     const create_info: *const vk.XlibSurfaceCreateInfoKHR = &.{
         .dpy = @ptrCast(xlib.display),
         .window = xlib.window.id,
@@ -74,10 +74,10 @@ fn initWin32(gpa: std.mem.Allocator, instance: Instance, win32: *Win32) Win32Err
 }
 
 fn initCocoa(gpa: std.mem.Allocator, instance: Instance, cocoa: *Cocoa) CocoaError!Surface {
-    const create_info: *const vk.MacOSSurfaceCreateInfoMVK = &.{
-        .p_view = @ptrCast(cocoa.view),
+    const create_info: *const vk.MetalSurfaceCreateInfoEXT = &.{
+        .p_layer = cocoa.metal_layer,
     };
 
-    const handle = try instance.proxy.createMacOsSurfaceMVK(create_info, @ptrCast(@alignCast(gpa.ptr)));
+    const handle = try instance.proxy.createMetalSurfaceEXT(create_info, @ptrCast(@alignCast(gpa.ptr)));
     return .{ .handle = handle };
 }

@@ -11,29 +11,27 @@ window: *cocoa.NSWindow,
 view: *cocoa.NSView,
 metal_layer: *cocoa.CAMetalLayer,
 
-pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
-    _ = window;
-
+pub fn open(self: *Cocoa, _: *Window, options: Window.OpenOptions) !void {
     const app = cocoa.applicationCreate();
     errdefer cocoa.applicationDestroy(app);
 
-    const window_handle = cocoa.windowCreate(app, .{
+    const window = cocoa.windowCreate(app, .{
         .width = options.size.width,
         .height = options.size.height,
         .x = if (options.position) |position| position.x else undefined,
         .y = if (options.position) |position| position.y else undefined,
         .has_position = options.position != null,
     });
-    errdefer cocoa.windowDestroy(window_handle);
+    errdefer cocoa.windowDestroy(window);
 
-    const view = cocoa.windowGetView(window_handle) orelse return error.GetView;
-    const metal_layer = cocoa.windowGetMetalLayer(window_handle) orelse return error.GetMetalLayer;
+    const view = cocoa.windowGetView(window) orelse return error.GetView;
+    const metal_layer = cocoa.windowGetMetalLayer(window) orelse return error.GetMetalLayer;
 
-    cocoa.windowSetTitle(window_handle, options.title);
+    cocoa.windowSetTitle(window, options.title);
 
     self.* = .{
         .app = app,
-        .window = window_handle,
+        .window = window,
         .view = view,
         .metal_layer = metal_layer,
     };
@@ -102,7 +100,6 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
                 window.keyboard.previous.set(@intFromEnum(key));
             }
         },
-
         .key_up => {
             const key = Window.Keyboard.fromCocoa(event.data.key.key_code) orelse {
                 std.log.err("unknown keycode: {d}", .{event.data.key.key_code});
@@ -125,16 +122,16 @@ pub fn setTitle(self: *Cocoa, _: *Window, title: [:0]const u8) !void {
     cocoa.windowSetTitle(self.window, title.ptr);
 }
 
-pub fn setMaxSize(self: *Cocoa, window: *Window, size: ?Window.Size) !void {
-    _ = self;
-    _ = window;
-    _ = size;
+pub fn setMaxSize(self: *Cocoa, _: *Window, size: ?Window.Size) !void {
+    const width: f64 = if (size) |s| @floatFromInt(s.width) else std.math.maxInt(f64);
+    const height: f64 = if (size) |s| @floatFromInt(s.height) else std.math.maxInt(f64);
+    cocoa.windowSetMaxSize(self.window, width, height);
 }
 
-pub fn setMinSize(self: *Cocoa, window: *Window, size: ?Window.Size) !void {
-    _ = self;
-    _ = window;
-    _ = size;
+pub fn setMinSize(self: *Cocoa, _: *Window, size: ?Window.Size) !void {
+    const width: f64 = if (size) |s| @floatFromInt(s.width) else 0.0;
+    const height: f64 = if (size) |s| @floatFromInt(s.height) else 0.0;
+    cocoa.windowSetMinSize(self.window, width, height);
 }
 
 pub fn minimize(self: *Cocoa, window: *Window) !void {
@@ -190,6 +187,11 @@ const cocoa = struct {
     pub const NSView = opaque {};
     pub const CAMetalLayer = opaque {};
 
+    pub const CGFloat = if (@bitSizeOf(usize) == 64)
+        f64
+    else
+        f32;
+
     pub const Event = extern struct {
         type: EventType,
 
@@ -204,16 +206,16 @@ const cocoa = struct {
             },
 
             mouse_move: extern struct {
-                x: f64,
-                y: f64,
+                x: CGFloat,
+                y: CGFloat,
             },
             mouse_button: extern struct {
                 button: u32,
                 pressed: bool,
             },
             mouse_scroll: extern struct {
-                x: f64,
-                y: f64,
+                x: CGFloat,
+                y: CGFloat,
             },
 
             key: extern struct {
@@ -255,4 +257,6 @@ const cocoa = struct {
     pub extern fn windowGetView(window: *NSWindow) ?*NSView;
     pub extern fn windowGetMetalLayer(window: *NSWindow) ?*CAMetalLayer;
     pub extern fn windowSetTitle(window: *NSWindow, title: [*:0]const u8) void;
+    pub extern fn windowSetMaxSize(window: *NSWindow, width: CGFloat, height: CGFloat) void;
+    pub extern fn windowSetMinSize(window: *NSWindow, width: CGFloat, height: CGFloat) void;
 };

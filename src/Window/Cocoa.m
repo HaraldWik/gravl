@@ -34,8 +34,8 @@ typedef struct {
         } move;
 
         struct {
-            double x;
-            double y;
+            CGFloat x;
+            CGFloat y;
         } mouse_move;
 
         struct {
@@ -44,8 +44,8 @@ typedef struct {
         } mouse_button;
 
         struct {
-            double x;
-            double y;
+            CGFloat x;
+            CGFloat y;
         } mouse_scroll;
 
         struct {
@@ -206,4 +206,16 @@ void windowSetTitle(void *handle, const char *title) {
 
     NSString *string = [NSString stringWithUTF8String:title];
     [window setTitle:string];
+}
+
+void windowSetMaxSize(void *handle, double width, double height) {
+    NSWindow *window = (__bridge NSWindow *)handle;
+
+    [window setMaxSize:NSMakeSize((CGFloat)width, (CGFloat)height)];
+}
+
+void windowSetMinSize(void *handle, double width, double height) {
+    NSWindow *window = (__bridge NSWindow *)handle;
+
+    [window setMinSize:NSMakeSize((CGFloat)width, (CGFloat)height)];
 }

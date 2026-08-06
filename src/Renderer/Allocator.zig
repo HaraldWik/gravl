@@ -6,12 +6,12 @@ const vk = @import("vulkan");
 const std = @import("std");
 
 callbacks: vk.AllocationCallbacks = undefined,
-child_allocator: std.mem.Allocator,
+backing_allocator: std.mem.Allocator,
 
 pub fn init(child_allocator: std.mem.Allocator) std.mem.Allocator.Error!*RendererAllocator {
     const self = try child_allocator.create(RendererAllocator);
     self.* = .{
-        .child_allocator = child_allocator,
+        .backing_allocator = child_allocator,
         .callbacks = .{
             .p_user_data = @ptrCast(self),
             .pfn_allocation = vulkan.alloc,
@@ -23,7 +23,7 @@ pub fn init(child_allocator: std.mem.Allocator) std.mem.Allocator.Error!*Rendere
 }
 
 pub fn deinit(self: *RendererAllocator) void {
-    self.child_allocator.destroy(self);
+    self.backing_allocator.destroy(self);
 }
 
 pub fn allocator(self: *RendererAllocator) std.mem.Allocator {
@@ -40,19 +40,19 @@ pub fn allocator(self: *RendererAllocator) std.mem.Allocator {
 
 fn rawAlloc(context: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
     const self: *RendererAllocator = @ptrCast(@alignCast(context));
-    return self.child_allocator.rawAlloc(len, alignment, ret_addr);
+    return self.backing_allocator.rawAlloc(len, alignment, ret_addr);
 }
 fn rawResize(context: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
     const self: *RendererAllocator = @ptrCast(@alignCast(context));
-    return self.child_allocator.rawResize(memory, alignment, new_len, ret_addr);
+    return self.backing_allocator.rawResize(memory, alignment, new_len, ret_addr);
 }
 fn rawRemap(context: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
     const self: *RendererAllocator = @ptrCast(@alignCast(context));
-    return self.child_allocator.rawRemap(memory, alignment, new_len, ret_addr);
+    return self.backing_allocator.rawRemap(memory, alignment, new_len, ret_addr);
 }
 fn rawFree(context: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
     const self: *RendererAllocator = @ptrCast(@alignCast(context));
-    self.child_allocator.rawFree(memory, alignment, ret_addr);
+    self.backing_allocator.rawFree(memory, alignment, ret_addr);
 }
 
 const vulkan = struct {
@@ -69,7 +69,7 @@ const vulkan = struct {
         _: vk.SystemAllocationScope,
     ) callconv(.c) ?*anyopaque {
         const self: *RendererAllocator = @ptrCast(@alignCast(userdata));
-        const gpa = self.child_allocator;
+        const gpa = self.backing_allocator;
 
         const extra = @sizeOf(Header) + alignment;
         const total_size = size + extra;
@@ -124,7 +124,7 @@ const vulkan = struct {
         if (memory == null) return;
 
         const self: *RendererAllocator = @ptrCast(@alignCast(userdata));
-        const gpa = self.child_allocator;
+        const gpa = self.backing_allocator;
 
         const ptr: [*]u8 = @ptrCast(memory.?);
 
