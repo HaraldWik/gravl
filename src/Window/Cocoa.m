@@ -59,6 +59,14 @@ typedef struct {
     } data;
 } Event;
 
+typedef struct {
+    double x;
+    double y;
+    uint32_t width;
+    uint32_t height;
+    bool has_position;
+} WindowCreateInfo;
+
 void *applicationCreate(void) {
     NSApplication *app = [NSApplication sharedApplication];
 
@@ -160,8 +168,26 @@ bool applicationPollEvent(void *app_handle, Event *event) {
     return true;
 }
 
-void *windowCreate(void *app_handle) {
-    NSRect rect = NSMakeRect(100, 100, 800, 600);
+void *windowCreate(void *app_handle, WindowCreateInfo info) {
+    NSApplication *app = (__bridge NSApplication *)app_handle;
+
+    NSRect rect;
+
+    if (info.has_position) {
+        rect = NSMakeRect(
+            info.x,
+            info.y,
+            info.width,
+            info.height
+        );
+    } else {
+        rect = NSMakeRect(
+            0,
+            0,
+            info.width,
+            info.height
+        );
+    }
 
     NSWindow *window = [[NSWindow alloc]
         initWithContentRect:rect
@@ -172,14 +198,33 @@ void *windowCreate(void *app_handle) {
         backing:NSBackingStoreBuffered
         defer:NO];
 
-    [window makeKeyAndOrderFront:nil];
+    if (!info.has_position) {
+        [window center];
+    }
 
-    return (__bridge_retained void *)window;
+    NSView *view = [window contentView];
+
+    [view setWantsLayer:YES];
+
+    CAMetalLayer *layer = [CAMetalLayer layer];
+    [view setLayer:layer];
+
+    CocoaWindow *out = malloc(sizeof(CocoaWindow));
+    out->window = (__bridge_retained void *)window;
+    out->view = (__bridge void *)view;
+    out->metal_layer = (__bridge void *)layer;
+
+    return out;
 }
 
 void windowDestroy(void *handle) {
     NSWindow *window = (__bridge_transfer NSWindow *)handle;
     [window close];
+}
+
+void *windowGetView(void *handle) {
+    NSWindow *window = (__bridge NSWindow *)handle;
+    return (__bridge void *)[window contentView];
 }
 
 void windowSetTitle(void *handle, const char *title) {

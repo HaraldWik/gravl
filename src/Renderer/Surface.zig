@@ -74,9 +74,8 @@ fn initWin32(gpa: std.mem.Allocator, instance: Instance, win32: *Win32) Win32Err
 }
 
 fn initCocoa(gpa: std.mem.Allocator, instance: Instance, cocoa: *Cocoa) CocoaError!Surface {
-    _ = cocoa;
     const create_info: *const vk.MacOSSurfaceCreateInfoMVK = &.{
-        .p_view = undefined,
+        .p_view = @ptrCast(cocoa.view),
     };
 
     const handle = try instance.proxy.createMacOsSurfaceMVK(create_info, @ptrCast(@alignCast(gpa.ptr)));

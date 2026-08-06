@@ -69,7 +69,7 @@ pub fn init(allocator: std.mem.Allocator, window: *Window) !Renderer {
         },
         .macos => &.{
             vk.extensions.khr_surface.name,
-            "VK_MVK_macos_surface",
+            vk.extensions.ext_external_memory_metal.name,
         },
         else => &.{},
     };

@@ -6,33 +6,44 @@ const std = @import("std");
 
 const Window = @import("../Window.zig");
 
-app: *obj_c.Application,
-window: *obj_c.Window,
+app: *cocoa.Application,
+window: *cocoa.Window,
+view: *cocoa.View,
 
 pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
-    _ = options;
     _ = window;
 
-    const app = obj_c.applicationCreate();
-    errdefer obj_c.applicationDestroy(app);
+    const app = cocoa.applicationCreate();
+    errdefer cocoa.applicationDestroy(app);
 
-    const window_handle = obj_c.windowCreate(app);
-    errdefer obj_c.windowDestroy(window_handle);
+    const window_handle = cocoa.windowCreate(app, .{
+        .width = options.size.width,
+        .height = options.size.height,
+        .x = if (options.position) |position| position.x else undefined,
+        .y = if (options.position) |position| position.y else undefined,
+        .has_position = options.position != null,
+    });
+    errdefer cocoa.windowDestroy(window_handle);
+
+    const view = cocoa.windowGetView(window_handle);
+
+    cocoa.windowSetTitle(window_handle, options.title);
 
     self.* = .{
         .app = app,
         .window = window_handle,
+        .view = view,
     };
 }
 
 pub fn close(self: *Cocoa, _: *Window) void {
-    obj_c.windowDestroy(self.window);
-    obj_c.applicationDestroy(self.app);
+    cocoa.windowDestroy(self.window);
+    cocoa.applicationDestroy(self.app);
 }
 
 pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
-    var event: obj_c.Event = undefined;
-    while (obj_c.applicationPollEvent(self.app, &event)) switch (event.type) {
+    var event: cocoa.Event = undefined;
+    while (cocoa.applicationPollEvent(self.app, &event)) switch (event.type) {
         .close => window.should_close = true,
 
         .resize => {
@@ -108,7 +119,7 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
 }
 
 pub fn setTitle(self: *Cocoa, _: *Window, title: [:0]const u8) !void {
-    obj_c.windowSetTitle(self.window, title.ptr);
+    cocoa.windowSetTitle(self.window, title.ptr);
 }
 
 pub fn setMaxSize(self: *Cocoa, window: *Window, size: ?Window.Size) !void {
@@ -162,9 +173,18 @@ pub fn setPointerRelative(self: *Cocoa, window: *Window, enabled: bool) !void {
     _ = enabled;
 }
 
-const obj_c = struct {
+const cocoa = struct {
     pub const Application = opaque {};
-    pub const Window = opaque {};
+    pub const Window = opaque {
+        pub const CreateInfo = extern struct {
+            x: f64,
+            y: f64,
+            width: u32,
+            height: u32,
+            has_position: bool,
+        };
+    };
+    pub const View = opaque {};
 
     pub const Event = extern union {
         type: EventType,
@@ -223,7 +243,8 @@ const obj_c = struct {
 
     pub extern fn applicationPollEvent(app: *Application, event: *Event) bool;
 
-    pub extern fn windowCreate(app: *Application) *obj_c.Window;
-    pub extern fn windowDestroy(window: *obj_c.Window) void;
-    pub extern fn windowSetTitle(window: *obj_c.Window, title: [*:0]const u8) void;
+    pub extern fn windowCreate(app: *Application, create_info: cocoa.Window.CreateInfo) *cocoa.Window;
+    pub extern fn windowDestroy(window: *cocoa.Window) void;
+    pub extern fn windowGetView(window: *cocoa.Window) ?*View;
+    pub extern fn windowSetTitle(window: *cocoa.Window, title: [*:0]const u8) void;
 };
