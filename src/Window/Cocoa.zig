@@ -1,6 +1,6 @@
 const Cocoa = @This();
 
-// zig build -Dtarget=aarch64-macos
+// zig build -Dtarget=aarch64-macos && gh workflow run "macOS Build"
 
 const std = @import("std");
 
@@ -88,25 +88,21 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
             window.pointer.axis.vertical += event.data.mouse_scroll.y;
         },
 
-        .key_down => {
+        .key_down, .key_up => {
             const key = Window.Keyboard.fromCocoa(event.data.key.key_code) orelse {
                 std.log.err("unknown keycode: {d}", .{event.data.key.key_code});
                 continue;
             };
 
-            window.keyboard.press(key);
+            switch (event.type) {
+                .key_down => window.keyboard.press(key),
+                .key_up => window.keyboard.release(key),
+                else => unreachable,
+            }
 
             if (event.data.key.repeat) {
                 window.keyboard.previous.set(@intFromEnum(key));
             }
-        },
-        .key_up => {
-            const key = Window.Keyboard.fromCocoa(event.data.key.key_code) orelse {
-                std.log.err("unknown keycode: {d}", .{event.data.key.key_code});
-                continue;
-            };
-
-            window.keyboard.release(key);
         },
         .text_input => {
             var writer = options.text orelse continue;
