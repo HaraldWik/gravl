@@ -119,14 +119,14 @@ pub fn setTitle(self: *Cocoa, _: *Window, title: [:0]const u8) !void {
 }
 
 pub fn setMaxSize(self: *Cocoa, _: *Window, size: ?Window.Size) !void {
-    const width: f64 = if (size) |s| @floatFromInt(s.width) else std.math.maxInt(f64);
-    const height: f64 = if (size) |s| @floatFromInt(s.height) else std.math.maxInt(f64);
+    const width: cocoa.CGFloat = if (size) |s| @floatFromInt(s.width) else std.math.maxInt(f64);
+    const height: cocoa.CGFloat = if (size) |s| @floatFromInt(s.height) else std.math.maxInt(f64);
     cocoa.windowSetMaxSize(self.window, width, height);
 }
 
 pub fn setMinSize(self: *Cocoa, _: *Window, size: ?Window.Size) !void {
-    const width: f64 = if (size) |s| @floatFromInt(s.width) else 0.0;
-    const height: f64 = if (size) |s| @floatFromInt(s.height) else 0.0;
+    const width: cocoa.CGFloat = if (size) |s| @floatFromInt(s.width) else 0.0;
+    const height: cocoa.CGFloat = if (size) |s| @floatFromInt(s.height) else 0.0;
     cocoa.windowSetMinSize(self.window, width, height);
 }
 
