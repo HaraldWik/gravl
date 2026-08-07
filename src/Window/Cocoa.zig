@@ -79,7 +79,7 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
                 6 => b.extra2 = state,
                 7 => b.extra3 = state,
                 else => {
-                    std.log.err("bad mouse button: {d}", .{event.mouse_button.button});
+                    std.log.err("bad mouse button: {d}", .{event.data.mouse_button.button});
                 },
             }
         },

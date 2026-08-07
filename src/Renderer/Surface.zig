@@ -75,7 +75,7 @@ fn initWin32(gpa: std.mem.Allocator, instance: Instance, win32: *Win32) Win32Err
 
 fn initCocoa(gpa: std.mem.Allocator, instance: Instance, cocoa: *Cocoa) CocoaError!Surface {
     const create_info: *const vk.MetalSurfaceCreateInfoEXT = &.{
-        .p_layer = cocoa.metal_layer,
+        .p_layer = @ptrCast(cocoa.metal_layer),
     };
 
     const handle = try instance.proxy.createMetalSurfaceEXT(create_info, @ptrCast(@alignCast(gpa.ptr)));
