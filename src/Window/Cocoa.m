@@ -170,9 +170,18 @@ bool applicationPollEvent(void *app_handle, Event *event) {
 }
 
 void *windowCreate(void *app_handle, WindowCreateInfo info) {
+    NSRect rect = NSMakeRect(
+        0,
+        0,
+        info.width,
+        info.height
+    );
+
     NSWindow *window = [[NSWindow alloc]
         initWithContentRect:rect
-        styleMask:...
+        styleMask:(NSWindowStyleMaskTitled |
+                   NSWindowStyleMaskClosable |
+                   NSWindowStyleMaskResizable)
         backing:NSBackingStoreBuffered
         defer:NO];
 

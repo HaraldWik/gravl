@@ -256,6 +256,30 @@ pub const Frame = struct {
 
         const image = swapchain.images[swapchain.image_index];
 
+        // var barrier: vk.ImageMemoryBarrier2 = .{
+        //     .srcStageMask = .{ .top_of_pipe_bit = true },
+        //     .srcAccessMask = .{},
+        //     .dstStageMask = .{ .color_attachment_output_bit = true },
+        //     .dstAccessMask = .{ .color_attachment_write_bit = true },
+        //     .oldLayout = .undefined,
+        //     .newLayout = .color_attachment_optimal,
+        //     .image = image,
+        //     .subresourceRange = .{
+        //         .aspectMask = .{ .color_bit = true },
+        //         .baseMipLevel = 0,
+        //         .levelCount = 1,
+        //         .baseArrayLayer = 0,
+        //         .layerCount = 1,
+        //     },
+        // };
+
+        // const dependency: *const vk.DependencyInfo = &.{
+        //     .imageMemoryBarrierCount = 1,
+        //     .pImageMemoryBarriers = &barrier,
+        // };
+
+        // device.proxy.cmdPipelineBarrier2(frame.command_buffer, dependency);
+
         try device.proxy.resetCommandBuffer(
             frame.command_buffer,
             .{},
