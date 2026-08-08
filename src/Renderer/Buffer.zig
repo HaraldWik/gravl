@@ -29,7 +29,7 @@ pub fn init(comptime T: type, gpa: std.mem.Allocator, physical_device: PhysicalD
 
     const requirements = device.proxy.getBufferMemoryRequirements(handle);
 
-    const memory_type = findMemoryType(
+    const memory_type = PhysicalDevice.findMemoryType(
         requirements.memory_type_bits,
         .{ .host_visible_bit = true, .host_coherent_bit = true },
         physical_device.memory_properties,
@@ -65,16 +65,4 @@ pub fn deinit(self: Buffer, gpa: std.mem.Allocator, device: Device) void {
 
 pub fn getAddress(self: Buffer, device: Device) vk.DeviceAddress {
     return device.proxy.getBufferDeviceAddress(&.{ .buffer = self.handle });
-}
-
-fn findMemoryType(type_filter: u32, properties: vk.MemoryPropertyFlags, memory_properties: vk.PhysicalDeviceMemoryProperties) u32 {
-    for (0..memory_properties.memory_type_count) |i| {
-        if ((type_filter & (@as(u32, 1) << @intCast(i))) != 0 and
-            (memory_properties.memory_types[i].property_flags.toInt() & properties.toInt()) == properties.toInt())
-        {
-            return @intCast(i);
-        }
-    }
-
-    unreachable;
 }

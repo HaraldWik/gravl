@@ -10,6 +10,7 @@ const Window = @import("../Window.zig");
 gpa: std.mem.Allocator,
 hinstance: std.os.windows.HINSTANCE,
 class: win32.WNDCLASSEXW,
+class_name: [:0]const u16,
 hwnd: std.os.windows.HWND,
 
 pending_high_surrogate: ?u16 = null,
@@ -25,7 +26,7 @@ pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Wind
     const hinstance: std.os.windows.HINSTANCE = @ptrCast(win32.GetModuleHandleW(null) orelse return error.GetInstanceHandle);
 
     const class_name = try std.unicode.utf8ToUtf16LeAllocZ(gpa, options.app_id orelse "Class");
-    defer gpa.free(class_name);
+    errdefer gpa.free(class_name);
 
     const class = std.mem.zeroInit(win32.WNDCLASSEXW, .{
         .cbSize = @sizeOf(win32.WNDCLASSEXW),
@@ -74,14 +75,15 @@ pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Wind
         .gpa = gpa,
         .hinstance = hinstance,
         .class = class,
+        .class_name = class_name,
         .hwnd = @ptrCast(hwnd),
     };
 }
 
-pub fn close(self: *Win32, window: *Window) void {
-    _ = window;
+pub fn close(self: *Win32, _: *Window) void {
     _ = win32.DestroyWindow(@ptrCast(self.hwnd));
     _ = win32.UnregisterClassW(self.class.lpszClassName, @ptrCast(self.hinstance));
+    self.gpa.free(self.class_name);
 }
 
 pub fn poll(self: *Win32, window: *Window, options: Window.PollOptions) !void {

@@ -70,3 +70,16 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
 
     return error.MissingSuitableDevice;
 }
+
+pub fn findMemoryType(type_filter: u32, properties: vk.MemoryPropertyFlags, memory_properties: vk.PhysicalDeviceMemoryProperties) u32 {
+    for (0..memory_properties.memory_type_count) |i| {
+        const supported = (type_filter & (@as(u32, 1) << @intCast(i))) != 0;
+        const flags = memory_properties.memory_types[i].property_flags;
+
+        if (supported and flags.contains(properties)) {
+            return @intCast(i);
+        }
+    }
+
+    unreachable;
+}

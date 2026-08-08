@@ -21,20 +21,20 @@ pub fn build(b: *std.Build) void {
 
     const vulkan = b.dependency("vulkan", .{ .registry = vulkan_registry_path }).module("vulkan-zig");
 
-    const exe = b.addExecutable(.{
-        .name = "gravl",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "vulkan", .module = vulkan },
-            },
-            .link_libc = switch (target.result.os.tag) {
-                .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => true,
-                else => false,
-            },
-        }),
+    const win32 = b.dependency("win32", .{}).module("win32");
+
+    const mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "vulkan", .module = vulkan },
+            .{ .name = "win32", .module = win32 },
+        },
+        .link_libc = switch (target.result.os.tag) {
+            .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => true,
+            else => false,
+        },
     });
 
     switch (target.result.os.tag) {
@@ -67,7 +67,7 @@ pub fn build(b: *std.Build) void {
             scanner.generate("zwp_pointer_constraints_v1", 1);
             scanner.generate("zwp_relative_pointer_manager_v1", 1);
 
-            exe.root_module.addImport("wayland", wayland);
+            mod.addImport("wayland", wayland);
 
             const libxkbcommon = b.dependency("libxkbcommon", .{
                 .target = target,
@@ -78,14 +78,10 @@ pub fn build(b: *std.Build) void {
             const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
             xkbcommon.linkLibrary(libxkbcommon);
 
-            exe.root_module.addImport("xkbcommon", xkbcommon);
-        },
-        .windows => {
-            const win32 = b.dependency("win32", .{}).module("win32");
-            exe.root_module.addImport("win32", win32);
+            mod.addImport("xkbcommon", xkbcommon);
         },
         .macos => {
-            exe.root_module.addCSourceFile(.{
+            mod.addCSourceFile(.{
                 .file = b.path("src/Window/Cocoa.m"),
                 .flags = &.{
                     "-fobjc-arc",
@@ -93,12 +89,17 @@ pub fn build(b: *std.Build) void {
                 .language = .objective_c,
             });
 
-            exe.root_module.linkFramework("Cocoa", .{});
-            exe.root_module.linkFramework("QuartzCore", .{});
+            mod.linkFramework("Cocoa", .{});
+            mod.linkFramework("QuartzCore", .{});
             // exe.root_module.linkFramework("Foundation", .{});
         },
         else => {},
     }
+
+    const exe = b.addExecutable(.{
+        .name = "gravl",
+        .root_module = mod,
+    });
 
     b.installArtifact(exe);
 }

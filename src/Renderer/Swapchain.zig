@@ -94,7 +94,7 @@ pub const Depth = struct {
 
         const allocate_info: vk.MemoryAllocateInfo = .{
             .allocation_size = requirements.size,
-            .memory_type_index = findMemoryType(
+            .memory_type_index = PhysicalDevice.findMemoryType(
                 requirements.memory_type_bits,
                 .{ .device_local_bit = true },
                 physical_device.memory_properties,
@@ -158,17 +158,6 @@ pub const Depth = struct {
             const props = instance.proxy.getPhysicalDeviceFormatProperties(physical_device.handle, format);
 
             if (props.optimal_tiling_features.depth_stencil_attachment_bit) return format;
-        }
-
-        unreachable;
-    }
-    fn findMemoryType(type_filter: u32, properties: vk.MemoryPropertyFlags, memory_properties: vk.PhysicalDeviceMemoryProperties) u32 {
-        for (0..memory_properties.memory_type_count) |i| {
-            if ((type_filter & (@as(u32, 1) << @intCast(i))) != 0 and
-                (memory_properties.memory_types[i].property_flags.toInt() & properties.toInt()) == properties.toInt())
-            {
-                return @intCast(i);
-            }
         }
 
         unreachable;

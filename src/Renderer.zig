@@ -18,6 +18,7 @@ const Swapchain = @import("Renderer/Swapchain.zig");
 const CommandHandler = @import("Renderer/CommandHandler.zig");
 const ShaderObject = @import("Renderer/ShaderObject.zig");
 const Buffer = @import("Renderer/Buffer.zig");
+const Image = @import("Renderer/Image.zig");
 
 gpa_impl: *Allocator,
 gpa: std.mem.Allocator,
