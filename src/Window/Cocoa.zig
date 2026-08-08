@@ -108,7 +108,7 @@ pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
             var writer = options.text orelse continue;
             const codepoint: u21 = @truncate(event.data.text_input.codepoint);
             var buffer: [8]u8 = undefined;
-            const utf8 = buffer[0..try std.unicode.utf8Encode(codepoint, buffer)];
+            const utf8 = buffer[0..try std.unicode.utf8Encode(codepoint, &buffer)];
             try writer.writeAll(utf8);
         },
     };

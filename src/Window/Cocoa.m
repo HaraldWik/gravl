@@ -192,6 +192,12 @@ void *windowCreate(void *app_handle, WindowCreateInfo info) {
     CAMetalLayer *layer = [CAMetalLayer layer];
     [view setLayer:layer];
 
+    [window makeKeyAndOrderFront:nil];
+    [window center];
+
+    NSApplication *app = (__bridge NSApplication *)app_handle;
+    [app activateIgnoringOtherApps:YES];
+
     return (__bridge_retained void *)window;
 }
 

@@ -64,8 +64,10 @@ pub fn main(init: std.process.Init) !void {
         const arena = init.arena.allocator();
 
         const libgame = switch (native_os) {
+            .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => "libgame.so",
             .windows => "game.dll",
-            else => "libgame.so",
+            .macos => "game.dynlib",
+            else => @compileError("unsupported platform"),
         };
 
         const path = try std.Io.Dir.cwd().realPathFileAlloc(io, try std.Io.Dir.path.join(arena, &.{ std.Io.Dir.path.dirname(bin_path) orelse ".", libgame }), arena);
