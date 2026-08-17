@@ -12,6 +12,7 @@ hinstance: std.os.windows.HINSTANCE,
 class: win32.WNDCLASSEXW,
 class_name: [:0]const u16,
 hwnd: std.os.windows.HWND,
+icon: ?std.os.windows.HICON = null,
 
 pending_high_surrogate: ?u16 = null,
 
@@ -81,6 +82,7 @@ pub fn open(self: *Win32, window: *Window, gpa: std.mem.Allocator, options: Wind
 }
 
 pub fn close(self: *Win32, _: *Window) void {
+    if (self.icon) |icon| _ = win32.DestroyIcon(@ptrCast(icon));
     _ = win32.DestroyWindow(@ptrCast(self.hwnd));
     _ = win32.UnregisterClassW(self.class.lpszClassName, @ptrCast(self.hinstance));
     self.gpa.free(self.class_name);
@@ -351,11 +353,69 @@ pub fn setPointerConstraint(self: *Win32, _: *Window, constraint: Window.Pointer
 
 pub fn setPointerRelative(_: *Win32, _: *Window, _: bool) !void {}
 
-pub fn setIcon(self: *Win32, window: *Window, size: u32, bgra: []const u8) !void {
-    _ = self;
-    _ = window;
-    _ = size;
-    _ = bgra;
+pub fn setIcon(self: *Win32, _: *Window, size: u32, bgra: []const u8) !void {
+    std.debug.assert(bgra.len == size * size * 4);
+
+    var bitmap_info = std.mem.zeroInit(win32.BITMAPINFO, .{
+        .bmiHeader = .{
+            .biSize = @sizeOf(win32.BITMAPINFOHEADER),
+            .biWidth = @as(i32, @intCast(size)),
+            .biHeight = -@as(i32, @intCast(size)), // top-down
+            .biPlanes = 1,
+            .biBitCount = 32,
+            .biCompression = win32.BI_RGB,
+            .biSizeImage = @as(u32, @intCast(bgra.len)),
+            .biXPelsPerMeter = 0,
+            .biYPelsPerMeter = 0,
+            .biClrUsed = 0,
+            .biClrImportant = 0,
+        },
+    });
+
+    var bits: ?*anyopaque = null;
+
+    const color = win32.CreateDIBSection(
+        null,
+        &bitmap_info,
+        win32.DIB_RGB_COLORS,
+        &bits,
+        null,
+        0,
+    ) orelse return error.CreateDIBSection;
+    defer _ = win32.DeleteObject(@ptrCast(color));
+
+    @memcpy(@as([*]u8, @ptrCast(bits))[0..bgra.len], bgra);
+
+    // CreateIconIndirect expects a mask bitmap too.
+    const mask = win32.CreateBitmap(@intCast(size), @intCast(size), 1, 1, null) orelse return error.CreateBitmap;
+    defer _ = win32.DeleteObject(@ptrCast(mask));
+
+    var icon_info: win32.ICONINFO = .{
+        .fIcon = win32.TRUE,
+        .xHotspot = 0,
+        .yHotspot = 0,
+        .hbmMask = mask,
+        .hbmColor = color,
+    };
+
+    const icon = win32.CreateIconIndirect(&icon_info) orelse return error.CreateIconIndirect;
+
+    _ = win32.SendMessageW(
+        @ptrCast(self.hwnd),
+        win32.WM_SETICON,
+        win32.ICON_BIG,
+        @intCast(@intFromPtr(icon)),
+    );
+
+    _ = win32.SendMessageW(
+        @ptrCast(self.hwnd),
+        win32.WM_SETICON,
+        win32.ICON_SMALL,
+        @intCast(@intFromPtr(icon)),
+    );
+
+    // Keep this HICON alive until the window no longer uses it.
+    self.icon = @ptrCast(icon);
 }
 
 fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {

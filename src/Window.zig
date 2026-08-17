@@ -251,9 +251,12 @@ pub fn setPointerRelative(self: *Window, enabled: bool) !void {
     try self.call(.setPointerRelative, .{enabled});
 }
 
-/// icons must be square therefore `size` is both the width and height
-pub fn setIcon(self: *Window, size: u32, bgra: []const u8) !void {
-    if (bgra.len != size.width * size.height * 4) return error.InvalidIconSize;
+/// icons must be square; `size` specifies both the width and height.
+/// `bgra` must contain exactly `size * size * 4` bytes of BGRA8 pixel data.
+pub fn setIcon(self: *Window, bgra: []const u8) !void {
+    const channels = 4;
+    const size: u32 = std.math.sqrt(@divExact(bgra.len, channels));
+    std.debug.assert(size <= 256);
     try self.call(.setIcon, .{ size, bgra });
 }
 

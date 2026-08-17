@@ -6,7 +6,7 @@ const Window = @import("../Window.zig");
 
 display: *xlib.Display,
 xi_extension: ?xlib.ExtensionQuery,
-window: xlib.Window,
+xid: xlib.Window,
 
 /// X Input Method,
 xim: *xlib.XIM,
@@ -26,13 +26,15 @@ pointer: struct {
 pub const Atoms = struct {
     WM_DELETE_WINDOW: xlib.Atom,
 
-    _NET_WM_NAME: xlib.Atom,
+    CARDINAL: xlib.Atom,
     UTF8_STRING: xlib.Atom,
 
+    _NET_WM_NAME: xlib.Atom,
     _NET_WM_STATE: xlib.Atom,
     _NET_WM_STATE_MAXIMIZED_HORZ: xlib.Atom,
     _NET_WM_STATE_MAXIMIZED_VERT: xlib.Atom,
     _NET_WM_STATE_FULLSCREEN: xlib.Atom,
+    _NET_WM_ICON: xlib.Atom,
 };
 
 pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
@@ -176,7 +178,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     self.* = .{
         .display = display,
         .xi_extension = xi_extension,
-        .window = window_handle,
+        .xid = window_handle,
         .xim = xim,
         .xic = xic,
         .atoms = atoms,
@@ -192,7 +194,7 @@ pub fn close(self: *Xlib, _: *Window) void {
     _ = xlib.procs.XFreeCursor.?(display, self.invisible_cursor);
     _ = xlib.procs.XDestroyIC.?(self.xic);
     _ = xlib.procs.XCloseIM.?(self.xim);
-    _ = xlib.procs.XDestroyWindow.?(display, self.window);
+    _ = xlib.procs.XDestroyWindow.?(display, self.xid);
     _ = xlib.procs.XCloseDisplay.?(display);
 
     xi.ProcTable.unload();
@@ -354,7 +356,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
         _ = xlib.procs.XWarpPointer.?(
             display,
             .none,
-            self.window,
+            self.xid,
             0,
             0,
             0,
@@ -378,7 +380,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
     // Modern UTF-8 window title (_NET_WM_NAME)
     _ = xlib.procs.XChangeProperty.?(
         display,
-        self.window,
+        self.xid,
         self.atoms._NET_WM_NAME,
         self.atoms.UTF8_STRING,
         .@"8",
@@ -390,7 +392,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
     // Legacy ICCCM fallback (WM_NAME / XA_STRING)
     _ = xlib.procs.XChangeProperty.?(
         display,
-        self.window,
+        self.xid,
         .WM_NAME,
         .STRING,
         .@"8",
@@ -419,7 +421,7 @@ pub fn setMaxSize(self: *Xlib, window: *Window, _: ?Window.Size) !void {
 
     xlib.procs.XSetWMNormalHints.?(
         self.display,
-        self.window,
+        self.xid,
         &hints,
     );
 }
@@ -431,7 +433,7 @@ pub fn setMinSize(self: *Xlib, window: *Window, size: ?Window.Size) !void {
 pub fn minimize(self: *Xlib, _: *Window) !void {
     const screen = xlib.procs.XDefaultScreen.?(self.display);
 
-    if (xlib.procs.XIconifyWindow.?(self.display, self.window, screen) == 0) return error.IconifyWindow;
+    if (xlib.procs.XIconifyWindow.?(self.display, self.xid, screen) == 0) return error.IconifyWindow;
 
     _ = xlib.procs.XFlush.?(self.display);
 }
@@ -466,12 +468,12 @@ pub fn setPointerVisible(self: *Xlib, _: *Window, visible: bool) !void {
     if (visible)
         _ = xlib.procs.XUndefineCursor.?(
             self.display,
-            self.window,
+            self.xid,
         )
     else
         _ = xlib.procs.XDefineCursor.?(
             self.display,
-            self.window,
+            self.xid,
             self.invisible_cursor,
         );
 
@@ -486,7 +488,7 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
         .confined, .locked => {
             _ = xlib.procs.XGrabPointer.?(
                 self.display,
-                self.window,
+                self.xid,
                 xlib.TRUE,
                 .{
                     .pointer_motion = true,
@@ -495,7 +497,7 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
                 },
                 .async,
                 .async,
-                self.window,
+                self.xid,
                 .none, // cursor
                 .current,
             );
@@ -507,11 +509,30 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
 
 pub fn setPointerRelative(_: *Xlib, _: *Window, _: bool) !void {}
 
-pub fn setIcon(self: *Xlib, window: *Window, size: u32, bgra: []const u8) !void {
-    _ = self;
-    _ = window;
-    _ = size;
-    _ = bgra;
+pub fn setIcon(self: *Xlib, _: *Window, size: u32, bgra: []const u8) !void {
+    std.debug.assert(bgra.len == size * size * 4);
+
+    const max_size = 256;
+
+    var data: [2 + max_size * max_size]u32 = undefined;
+
+    data[0] = size;
+    data[1] = size;
+
+    @memcpy(std.mem.sliceAsBytes(data[2 .. 2 + size * size]), bgra);
+
+    _ = xlib.procs.XChangeProperty.?(
+        self.display,
+        self.xid,
+        self.atoms._NET_WM_ICON,
+        self.atoms.CARDINAL,
+        .@"32",
+        .replace,
+        @ptrCast(&data),
+        @intCast(2 + size * size),
+    );
+
+    _ = xlib.procs.XFlush.?(self.display);
 }
 
 fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long) void {
@@ -521,7 +542,7 @@ fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long)
             .serial = 0,
             .send_event = xlib.TRUE,
             .display = self.display,
-            .window = self.window,
+            .window = self.xid,
             .message_type = self.atoms._NET_WM_STATE,
             .format = 32,
             .data = .{
