@@ -17,10 +17,12 @@ display: *wl.Display,
 compositor: *wl.Compositor,
 wm_base: *xdg.WmBase,
 seat: *wl.Seat,
+shm: ?*wl.Shm,
 decoration_manager: ?*zxdg.DecorationManagerV1 = null,
 cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
 pointer_constraints: ?*zwp.PointerConstraintsV1 = null,
 relative_pointer_manager: ?*zwp.RelativePointerManagerV1 = null,
+toplevel_icon_manager: ?*xdg.ToplevelIconManagerV1 = null,
 
 pointer: ?*wl.Pointer = null,
 keyboard: ?*wl.Keyboard = null,
@@ -45,6 +47,8 @@ toplevel_decoration: ?*zxdg.ToplevelDecorationV1 = null,
 cursor_shape_device: ?*wp.CursorShapeDeviceV1 = null,
 pointer_constraint: PointerConstraint = .none,
 relative_pointer: ?*zwp.RelativePointerV1 = null,
+toplevel_icon: ?*xdg.ToplevelIconV1 = null,
+toplevel_icon_buffer: ShmBuffer = undefined,
 
 decoration_mode: zxdg.ToplevelDecorationV1.Mode = .client_side,
 pointer_visible: bool = true,
@@ -111,10 +115,12 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     const compositor = registry_data.compositor.?;
     const wm_base = registry_data.xdg_wm_base.?;
     const seat = registry_data.seat.?;
+    const shm = registry_data.shm;
     const decoration_manager = registry_data.zxdg_decoration_manager;
     const cursor_shape_manager = registry_data.wp_cursor_shape_manager;
     const pointer_constraints = registry_data.zwp_pointer_constraints;
     const relative_pointer_manager = registry_data.zwp_relative_pointer_manager;
+    const toplevel_icon_manager = registry_data.xdg_toplevel_icon_manager_v1;
 
     wm_base.setListener(?*anyopaque, xdgWmBaseListener, null);
     seat.setListener(*Wayland, seatListener, self);
@@ -150,10 +156,12 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
         .compositor = compositor,
         .wm_base = wm_base,
         .seat = seat,
+        .shm = shm,
         .decoration_manager = decoration_manager,
         .cursor_shape_manager = cursor_shape_manager,
         .pointer_constraints = pointer_constraints,
         .relative_pointer_manager = relative_pointer_manager,
+        .toplevel_icon_manager = toplevel_icon_manager,
 
         .pointer = self.pointer,
         .keyboard = self.keyboard,
@@ -177,6 +185,18 @@ pub fn close(self: *Wayland, window: *Window) void {
     if (self.xkb.keymap) |keymap| keymap.unref();
     self.xkb.context.unref();
 
+    if (self.toplevel_icon) |toplevel_icon| {
+        toplevel_icon.destroy();
+        self.toplevel_icon_buffer.destroy();
+    }
+    if (self.relative_pointer) |relative_pointer| relative_pointer.destroy();
+    switch (self.pointer_constraint) {
+        .none => {},
+        .confined => |constraint| if (constraint) |confined| confined.destroy(),
+        .locked => |constraint| if (constraint) |locked| locked.destroy(),
+    }
+    if (self.cursor_shape_device) |cursor_shape_device| cursor_shape_device.destroy();
+    if (self.toplevel_decoration) |toplevel_decoration| toplevel_decoration.destroy();
     self.toplevel.destroy();
     self.xdg_surface.destroy();
     self.surface.destroy();
@@ -350,14 +370,41 @@ pub fn setPointerRelative(self: *Wayland, window: *Window, enabled: bool) !void 
     self.relative_pointer = relative_pointer;
 }
 
+pub fn setIcon(self: *Wayland, _: *Window, size: u32, bgra: []const u8) !void {
+    const shm = self.shm orelse return;
+    const toplevel_icon_manager = self.toplevel_icon_manager orelse return;
+
+    if (self.toplevel_icon) |toplevel_icon| {
+        toplevel_icon.destroy();
+        self.toplevel_icon_buffer.destroy();
+    }
+
+    const toplevel_icon = try toplevel_icon_manager.createIcon();
+
+    const buffer = try ShmBuffer.create(
+        shm,
+        size,
+        size,
+        bgra,
+        .bgra8888,
+    );
+
+    toplevel_icon.addBuffer(buffer.proxy, 1);
+
+    self.toplevel_icon = toplevel_icon;
+    self.toplevel_icon_buffer = buffer;
+}
+
 const RegistryData = struct {
     compositor: ?*wl.Compositor = null,
     xdg_wm_base: ?*xdg.WmBase = null,
     seat: ?*wl.Seat = null,
+    shm: ?*wl.Shm = null,
     zxdg_decoration_manager: ?*zxdg.DecorationManagerV1 = null,
     wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
     zwp_pointer_constraints: ?*zwp.PointerConstraintsV1 = null,
     zwp_relative_pointer_manager: ?*zwp.RelativePointerManagerV1 = null,
+    xdg_toplevel_icon_manager_v1: ?*xdg.ToplevelIconManagerV1 = null,
 
     pub fn listener(registry: *wl.Registry, event: wl.Registry.Event, self: *RegistryData) void {
         switch (event) {
@@ -621,6 +668,90 @@ fn zwpRelativePointerListener(_: *zwp.RelativePointerV1, event: zwp.RelativePoin
         },
     }
 }
+
+const ShmBuffer = struct {
+    proxy: *wl.Buffer,
+    pixels: []align(std.heap.page_size_min) u8,
+    width: u32,
+    height: u32,
+    stride: u32,
+
+    pub fn create(shm: *wl.Shm, width: u32, height: u32, pixels: []const u8, format: ?wl.Shm.Format) !ShmBuffer {
+        const stride = width * 4;
+        const len = stride * height;
+
+        std.debug.assert(pixels.len == len);
+
+        var name_buffer: [100]u8 = undefined;
+        const name = try std.fmt.bufPrintSentinel(
+            &name_buffer,
+            "/shm-{d}-{d}-{d}",
+            .{ width, height, @intFromPtr(pixels.ptr) },
+            0,
+        );
+        const fd = std.posix.system.shm_open(
+            name.ptr,
+            @bitCast(std.posix.O{
+                .ACCMODE = .RDWR,
+                .CREAT = true,
+                .EXCL = true,
+            }),
+            std.posix.S.IWUSR | std.posix.S.IRUSR | std.posix.S.IWOTH | std.posix.S.IROTH,
+        );
+        if (fd < 0) return error.ShmOpen;
+        defer _ = std.posix.system.close(@intCast(fd));
+
+        _ = std.posix.system.shm_unlink(name.ptr);
+
+        if (std.posix.system.ftruncate(@intCast(fd), @intCast(len)) != 0) return error.Truncate;
+
+        const mapped = try std.posix.mmap(
+            null,
+            len,
+            .{ .READ = true, .WRITE = true },
+            .{ .TYPE = .SHARED },
+            fd,
+            0,
+        );
+
+        @memcpy(mapped, pixels);
+
+        const pool = try shm.createPool(@intCast(fd), @intCast(len));
+        defer pool.destroy();
+
+        const buffer = try pool.createBuffer(
+            0,
+            @intCast(width),
+            @intCast(height),
+            @intCast(stride),
+            format orelse .argb8888,
+        );
+
+        return .{
+            .proxy = buffer,
+            .pixels = mapped,
+            .width = width,
+            .height = height,
+            .stride = stride,
+        };
+    }
+
+    pub fn destroy(self: *ShmBuffer) void {
+        self.proxy.destroy();
+        std.posix.munmap(self.pixels);
+    }
+
+    pub fn present(self: *ShmBuffer, wl_surface: *wl.Surface) void {
+        wl_surface.attach(self.proxy, 0, 0);
+        wl_surface.damage(
+            0,
+            0,
+            @intCast(self.width),
+            @intCast(self.height),
+        );
+        wl_surface.commit();
+    }
+};
 
 var loader: Loader = .{};
 /// Loads the wayland-client at runtime

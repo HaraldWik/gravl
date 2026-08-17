@@ -132,7 +132,7 @@ pub const Key = enum(u8) {
     pub const count = @typeInfo(Key).@"enum".fields.len;
 
     pub const State = enum(u2) {
-        none = 0,
+        up = 0,
         press = 1,
         release = 2,
         repeat = 3,
@@ -142,7 +142,7 @@ pub const Key = enum(u8) {
         pub fn isDown(self: State) bool {
             return switch (self) {
                 .press, .repeat => true,
-                .none, .release => false,
+                .up, .release => false,
             };
         }
 
@@ -158,7 +158,7 @@ pub fn get(self: Keyboard, key: Key) Key.State {
     const down = self.current.isSet(@intFromEnum(key));
     const prev_down = self.previous.isSet(@intFromEnum(key));
 
-    return if (down) if (prev_down) .repeat else .press else if (prev_down) .release else .none;
+    return if (down) if (prev_down) .repeat else .press else if (prev_down) .release else .up;
 }
 
 pub fn isDown(self: Keyboard, key: Key) bool {

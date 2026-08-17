@@ -251,6 +251,12 @@ pub fn setPointerRelative(self: *Window, enabled: bool) !void {
     try self.call(.setPointerRelative, .{enabled});
 }
 
+/// icons must be square therefore `size` is both the width and height
+pub fn setIcon(self: *Window, size: u32, bgra: []const u8) !void {
+    if (bgra.len != size.width * size.height * 4) return error.InvalidIconSize;
+    try self.call(.setIcon, .{ size, bgra });
+}
+
 fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {
     switch (native_os) {
         .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => switch (self.inner) {

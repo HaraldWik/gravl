@@ -54,6 +54,7 @@ pub fn build(b: *std.Build) void {
             scanner.addCustomProtocol(wayland_protocols.path("unstable/tablet/tablet-unstable-v2.xml"));
             scanner.addCustomProtocol(wayland_protocols.path("unstable/pointer-constraints/pointer-constraints-unstable-v1.xml"));
             scanner.addCustomProtocol(wayland_protocols.path("unstable/relative-pointer/relative-pointer-unstable-v1.xml"));
+            scanner.addCustomProtocol(wayland_protocols.path("staging/xdg-toplevel-icon/xdg-toplevel-icon-v1.xml"));
 
             scanner.generate("wl_compositor", 1);
             scanner.generate("wl_output", 4);
@@ -66,6 +67,7 @@ pub fn build(b: *std.Build) void {
             scanner.generate("zwp_tablet_manager_v2", 1);
             scanner.generate("zwp_pointer_constraints_v1", 1);
             scanner.generate("zwp_relative_pointer_manager_v1", 1);
+            scanner.generate("xdg_toplevel_icon_manager_v1", 1);
 
             mod.addImport("wayland", wayland);
 

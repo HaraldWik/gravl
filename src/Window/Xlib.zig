@@ -507,6 +507,13 @@ pub fn setPointerConstraint(self: *Xlib, _: *Window, constraint: Window.Pointer.
 
 pub fn setPointerRelative(_: *Xlib, _: *Window, _: bool) !void {}
 
+pub fn setIcon(self: *Xlib, window: *Window, size: u32, bgra: []const u8) !void {
+    _ = self;
+    _ = window;
+    _ = size;
+    _ = bgra;
+}
+
 fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long) void {
     var event: xlib.Event = .{
         .client = .{

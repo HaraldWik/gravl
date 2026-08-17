@@ -10,6 +10,22 @@ const loader = @import("loader.zig");
 
 const gravl = @import("real_engine");
 
+pub const icon = struct {
+    const size: Window.Size = .{ .width = 10, .height = 10 };
+    const bgra = blk: {
+        var pixels: [size.width * size.height * 4]u8 = undefined;
+
+        for (0..size.width * size.height) |i| {
+            pixels[i * 4 + 0] = 0;
+            pixels[i * 4 + 1] = 0;
+            pixels[i * 4 + 2] = 255;
+            pixels[i * 4 + 3] = 255;
+        }
+
+        break :blk pixels;
+    };
+};
+
 pub const cube = struct {
     const vertices: []const Vertex = &.{
         // Front face (z = -0.5)
@@ -97,6 +113,8 @@ pub fn main(init: std.process.Init) !void {
     try window.setPointerVisible(false);
     try window.setPointerConstraint(.locked);
     try window.setPointerRelative(true);
+
+    try window.setIcon(icon.size, &icon.bgra);
 
     var renderer: Renderer = try .init(gpa, &window);
     defer renderer.deinit();

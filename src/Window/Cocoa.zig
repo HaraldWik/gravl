@@ -169,6 +169,13 @@ pub fn setPointerRelative(self: *Cocoa, window: *Window, enabled: bool) !void {
     _ = enabled;
 }
 
+pub fn setIcon(self: *Cocoa, window: *Window, size: u32, bgra: []const u8) !void {
+    _ = self;
+    _ = window;
+    _ = size;
+    _ = bgra;
+}
+
 const cocoa = struct {
     pub const NSApplication = opaque {};
     pub const NSWindow = opaque {

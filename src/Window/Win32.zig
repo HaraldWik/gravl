@@ -351,6 +351,13 @@ pub fn setPointerConstraint(self: *Win32, _: *Window, constraint: Window.Pointer
 
 pub fn setPointerRelative(_: *Win32, _: *Window, _: bool) !void {}
 
+pub fn setIcon(self: *Win32, window: *Window, size: u32, bgra: []const u8) !void {
+    _ = self;
+    _ = window;
+    _ = size;
+    _ = bgra;
+}
+
 fn wndProc(hwnd: win32.HWND, msg: u32, w_param: win32.WPARAM, l_param: win32.LPARAM) callconv(.winapi) win32.LRESULT {
     return switch (msg) {
         win32.WM_KILLFOCUS, win32.WM_CLOSE, win32.WM_SIZE, win32.WM_GETMINMAXINFO, win32.WM_MOVE, win32.WM_SETFOCUS => |wm| {
