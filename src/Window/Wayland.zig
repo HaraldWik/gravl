@@ -386,7 +386,7 @@ pub fn setIcon(self: *Wayland, _: *Window, size: u32, bgra: []const u8) !void {
         size,
         size,
         bgra,
-        .bgra8888,
+        null, //.bgra8888,
     );
 
     toplevel_icon.addBuffer(buffer.proxy, 1);

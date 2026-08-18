@@ -148,6 +148,7 @@ pub const Quaternion = packed struct {
         } };
     }
 };
+
 pub const Matrix4 = extern struct {
     inner: [4 * 4]f32,
 

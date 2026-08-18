@@ -263,7 +263,7 @@ pub const Camera = struct {
         return self.rotation
             .inversed()
             .matrix()
-            .mul(.translation(self.position));
+            .translated(self.position);
     }
 
     const sensitivity = 0.005;
