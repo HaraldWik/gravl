@@ -2,7 +2,7 @@
     .name = .gravl,
     .version = "0.0.0",
     .fingerprint = 0x58726643cc67aa34,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .wayland = .{
             .url = "git+https://github.com/HaraldWik/zig-wayland#6f8c31f47299b70cf02e8c7d15e07379f3dceb05",
@@ -24,6 +24,11 @@
         .libxkbcommon = .{
             .url = "git+https://github.com/HaraldWik/libxkbcommon#5caf185f3c1981cc56869c690361902e5612047e",
             .hash = "libxkbcommon-1.11.0-93LaF31wAgDBmMuuxfPTZ2xJiOc3ZOb5OwOVi4FlD5iy",
+        },
+
+        .macosx = .{
+            .url = "git+https://github.com/HaraldWik/macosx#59a7f52ce505c41cb6027d11621f85d5327ad844",
+            .hash = "macosx-0.0.0-XLZD6_6dAQAtEiUD9PraFN7y1jna0HWoKkL9dMc_n9jM",
         },
 
         .vulkan = .{

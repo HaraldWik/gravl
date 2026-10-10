@@ -3,7 +3,7 @@ const Swapchain = @This();
 const std = @import("std");
 const vk = @import("vulkan");
 
-const Size = @import("../Window.zig").Size;
+const Size = @import("../../Window.zig").Size;
 
 const Instance = @import("Instance.zig");
 const Surface = @import("Surface.zig");

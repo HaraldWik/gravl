@@ -1,143 +1,318 @@
 const Cocoa = @This();
 
-// zig build -Dtarget=aarch64-macos && gh workflow run "macOS Build"
+// zig build -Dtarget=aarch64-macos
 
 const std = @import("std");
+const c = @import("objc");
+const NS = @import("frameworks").NS;
+const CA = @import("frameworks").CA;
 
 const Window = @import("../Window.zig");
 
-app: *cocoa.NSApplication,
-window: *cocoa.NSWindow,
-view: *cocoa.NSView,
-metal_layer: *cocoa.CAMetalLayer,
+const View = struct {
+    pub fn class() !*c.Class {
+        const superclass: *c.Class = try .get("NSView");
 
-pub fn open(self: *Cocoa, _: *Window, options: Window.OpenOptions) !void {
-    const app = cocoa.applicationCreate();
-    errdefer cocoa.applicationDestroy(app);
+        const cls: *c.Class = try .allocatePair(
+            superclass,
+            "View",
+            0,
+        );
 
-    const window = cocoa.windowCreate(app, .{
-        .width = options.size.width,
-        .height = options.size.height,
-        .x = if (options.position) |position| position.x else undefined,
-        .y = if (options.position) |position| position.y else undefined,
-        .has_position = options.position != null,
+        try cls.addMethod(.registerName("acceptsFirstResponder"), acceptsFirstResponder);
+        try cls.addMethod(.registerName("keyDown:"), keyDown);
+        try cls.addMethod(.registerName("keyUp:"), keyUp);
+        try cls.addMethod(.registerName("flagsChanged:"), flagsChanged);
+        try cls.addMethod(.registerName("mouseDown:"), mouseDown);
+        try cls.addMethod(.registerName("mouseUp:"), mouseUp);
+        try cls.addMethod(.registerName("rightMouseDown:"), rightMouseDown);
+        try cls.addMethod(.registerName("rightMouseUp:"), rightMouseUp);
+        try cls.addMethod(.registerName("mouseMoved:"), mouseMoved);
+        try cls.addMethod(.registerName("mouseDragged:"), mouseDragged);
+        try cls.addMethod(.registerName("scrollWheel:"), scrollWheel);
+
+        cls.registerPair();
+
+        return cls;
+    }
+
+    fn acceptsFirstResponder(_: *c.Object, _: *c.SEL) callconv(.c) bool {
+        return true;
+    }
+
+    fn keyDown(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
+        const key_code = c.msgSend(
+            u16,
+            event,
+            "keyCode",
+            .{},
+        );
+
+        const characters = c.msgSend(
+            *NS.String,
+            event,
+            "characters",
+            .{},
+        );
+
+        std.debug.print(
+            "keyDown: keyCode={d}, utf8={s}\n",
+            .{ key_code, characters.utf8() },
+        );
+    }
+
+    fn keyUp(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
+        const key_code = c.msgSend(
+            u16,
+            event,
+            "keyCode",
+            .{},
+        );
+
+        std.debug.print(
+            "keyUp: keyCode={}\n",
+            .{key_code},
+        );
+    }
+
+    fn flagsChanged(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
+        const key_code = c.msgSend(
+            u16,
+            event,
+            "keyCode",
+            .{},
+        );
+
+        const modifiers = c.msgSend(
+            usize,
+            event,
+            "modifierFlags",
+            .{},
+        );
+
+        std.debug.print(
+            "flagsChanged: keyCode={} modifiers={}\n",
+            .{ key_code, modifiers },
+        );
+    }
+
+    fn mouseDown(_: *c.Object, _: *c.SEL, _: *NS.Event) callconv(.c) void {
+        std.debug.print("mouseDown\n", .{});
+    }
+
+    fn mouseUp(_: *c.Object, _: *c.SEL, _: *NS.Event) callconv(.c) void {
+        std.debug.print("mouseUp\n", .{});
+    }
+
+    fn rightMouseDown(_: *c.Object, _: *c.SEL, _: *NS.Event) callconv(.c) void {
+        std.debug.print("rightMouseDown\n", .{});
+    }
+
+    fn rightMouseUp(_: *c.Object, _: *c.SEL, _: *NS.Event) callconv(.c) void {
+        std.debug.print("rightMouseUp\n", .{});
+    }
+
+    fn mouseMoved(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
+        const location = c.msgSend(
+            NS.Point,
+            event,
+            "locationInWindow",
+            .{},
+        );
+
+        const dx = c.msgSend(
+            f64,
+            event,
+            "deltaX",
+            .{},
+        );
+
+        const dy = c.msgSend(
+            f64,
+            event,
+            "deltaY",
+            .{},
+        );
+
+        std.debug.print(
+            "mouseMoved: x={d} y={d} dx={d} dy={d}\n",
+            .{
+                location.x,
+                location.y,
+                dx,
+                dy,
+            },
+        );
+    }
+
+    fn mouseDragged(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
+        const location = c.msgSend(
+            NS.Point,
+            event,
+            "locationInWindow",
+            .{},
+        );
+
+        const dx = c.msgSend(
+            f64,
+            event,
+            "deltaX",
+            .{},
+        );
+
+        const dy = c.msgSend(
+            f64,
+            event,
+            "deltaY",
+            .{},
+        );
+
+        std.debug.print(
+            "mouseDragged: x={d} y={d} dx={d} dy={d}\n",
+            .{
+                location.x,
+                location.y,
+                dx,
+                dy,
+            },
+        );
+    }
+
+    fn scrollWheel(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
+        const dx = c.msgSend(
+            f64,
+            event,
+            "scrollingDeltaX",
+            .{},
+        );
+
+        const dy = c.msgSend(
+            f64,
+            event,
+            "scrollingDeltaY",
+            .{},
+        );
+
+        std.debug.print(
+            "scrollWheel: dx={d} dy={d}\n",
+            .{ dx, dy },
+        );
+    }
+};
+
+app: *NS.Application,
+window: *NS.Window,
+view: *NS.View,
+metal_layer: *CA.MetalLayer,
+
+pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
+    const app: *NS.Application = .shared();
+
+    _ = app.setActivationPolicy(.regular);
+    app.finishLaunching();
+
+    const view_class = try View.class();
+
+    const ns_window: *NS.Window = .init(
+        .alloc(),
+        .{
+            .origin = .{
+                .x = 100, // TODO
+                .y = 100, // TODO
+            },
+            .size = .{
+                .width = @floatFromInt(options.size.width),
+                .height = @floatFromInt(options.size.height),
+            },
+        },
+        .{},
+        .buffered,
+        false,
+    );
+
+    ns_window.setTitleSlice(options.title.ptr);
+
+    const window_delegate: NS.Window.Delegate = try .create(.{
+        .@"windowShouldClose:" = windowShouldClose,
+    }, *Window, window);
+
+    const view: *NS.View = .initWithFrame(c.msgSend(
+        *NS.View,
+        view_class,
+        "alloc",
+        .{},
+    ), .{
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+        .size = .{
+            .width = @floatFromInt(options.size.width),
+            .height = @floatFromInt(options.size.height),
+        },
     });
-    errdefer cocoa.windowDestroy(window);
 
-    const view = cocoa.windowGetView(window) orelse return error.GetView;
-    const metal_layer = cocoa.windowGetMetalLayer(window) orelse return error.GetMetalLayer;
+    ns_window.setAcceptsMouseMovedEvents(true);
+    window_delegate.setAsDelegate(ns_window);
 
-    cocoa.windowSetTitle(window, options.title);
+    ns_window.setContentView(view);
+
+    ns_window.makeKeyAndOrderFront();
+    _ = ns_window.makeFirstResponder(@ptrCast(view));
+
+    app.activateIgnoringOtherApps(true);
+
+    const metal_layer: *CA.MetalLayer = .new();
+
+    view.setWantsLayer(true);
+    view.setLayer(metal_layer.toLayer());
 
     self.* = .{
         .app = app,
-        .window = window,
+        .window = ns_window,
         .view = view,
         .metal_layer = metal_layer,
     };
 }
 
 pub fn close(self: *Cocoa, _: *Window) void {
-    cocoa.windowDestroy(self.window);
-    cocoa.applicationDestroy(self.app);
+    _ = self;
 }
 
-pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
-    var event: cocoa.Event = undefined;
-    while (cocoa.applicationPollEvent(self.app, &event)) switch (event.type) {
-        .close => window.should_close = true,
+pub fn poll(self: *Cocoa, _: *Window, options: Window.PollOptions) !void {
+    _ = options;
 
-        .resize => {
-            const size = event.data.resize;
-            window.size = .{ .width = size.width, .height = size.height };
-        },
-        .move => {
-            const position = event.data.move;
-            window.position = .{ .x = position.x, .y = position.y };
-        },
-
-        .focus_gained => window.focused = true,
-        .focus_lost => window.focused = false,
-
-        .mouse_move => {
-            const position = event.data.mouse_move;
-            window.pointer.movement = .{ .position = .{
-                .x = position.x,
-                .y = position.y,
-            } };
-        },
-        .mouse_button => {
-            const b = &window.pointer.buttons;
-            const state = event.data.mouse_button.pressed;
-            switch (event.data.mouse_button.button) {
-                0 => b.left = state,
-                1 => b.right = state,
-                2 => b.middle = state,
-                3 => b.forward = state,
-                4 => b.back = state,
-                5 => b.extra1 = state,
-                6 => b.extra2 = state,
-                7 => b.extra3 = state,
-                else => {
-                    std.log.err("bad mouse button: {d}", .{event.data.mouse_button.button});
-                },
-            }
-        },
-        .mouse_scroll => {
-            window.pointer.axis.horizontal += event.data.mouse_scroll.x;
-            window.pointer.axis.vertical += event.data.mouse_scroll.y;
-        },
-
-        .key_down, .key_up => {
-            const key = Window.Keyboard.fromCocoa(event.data.key.key_code) orelse {
-                std.log.err("unknown keycode: {d}", .{event.data.key.key_code});
-                continue;
-            };
-
-            switch (event.type) {
-                .key_down => window.keyboard.press(key),
-                .key_up => window.keyboard.release(key),
-                else => unreachable,
-            }
-
-            if (event.data.key.repeat) {
-                window.keyboard.previous.set(@intFromEnum(key));
-            }
-        },
-        .text_input => {
-            var writer = options.text orelse continue;
-            const codepoint: u21 = @truncate(event.data.text_input.codepoint);
-            var buffer: [8]u8 = undefined;
-            const utf8 = buffer[0..try std.unicode.utf8Encode(codepoint, &buffer)];
-            try writer.writeAll(utf8);
-        },
-    };
+    while (self.app.nextEventMatchingMask(.any, .distantPast(), NS.RunLoop.default.*, true)) |event| {
+        self.app.sendEvent(event);
+    }
 }
 
 pub fn setTitle(self: *Cocoa, _: *Window, title: [:0]const u8) !void {
-    cocoa.windowSetTitle(self.window, title.ptr);
+    self.window.setTitleSlice(title.ptr);
 }
 
 pub fn setMaxSize(self: *Cocoa, _: *Window, size: ?Window.Size) !void {
-    const width: cocoa.CGFloat = if (size) |s| @floatFromInt(s.width) else std.math.floatMax(cocoa.CGFloat);
-    const height: cocoa.CGFloat = if (size) |s| @floatFromInt(s.height) else std.math.floatMax(cocoa.CGFloat);
-    cocoa.windowSetMaxSize(self.window, width, height);
+    const max_size: NS.Size = .{
+        .width = if (size) |s| @floatFromInt(s.width) else std.math.floatMax(f64),
+        .height = if (size) |s| @floatFromInt(s.height) else std.math.floatMax(f64),
+    };
+    self.window.setMaxSize(max_size);
 }
 
 pub fn setMinSize(self: *Cocoa, _: *Window, size: ?Window.Size) !void {
-    const width: cocoa.CGFloat = if (size) |s| @floatFromInt(s.width) else 0.0;
-    const height: cocoa.CGFloat = if (size) |s| @floatFromInt(s.height) else 0.0;
-    cocoa.windowSetMinSize(self.window, width, height);
+    const min_size: NS.Size = .{
+        .width = if (size) |s| @floatFromInt(s.width) else 0.0,
+        .height = if (size) |s| @floatFromInt(s.height) else 0.0,
+    };
+    self.window.setMinSize(min_size);
 }
 
-pub fn minimize(self: *Cocoa, window: *Window) !void {
-    _ = self;
-    _ = window;
+pub fn minimize(self: *Cocoa, _: *Window) !void {
+    self.window.miniaturize();
 }
 
-pub fn maximize(self: *Cocoa, window: *Window) !void {
-    _ = self;
-    _ = window;
+pub fn maximize(self: *Cocoa, _: *Window) !void {
+    c.msgSend(void, self.window, .registerName("performZoom:"), .{@as(?*anyopaque, null)});
 }
 
 pub fn restore(self: *Cocoa, window: *Window) !void {
@@ -145,10 +320,9 @@ pub fn restore(self: *Cocoa, window: *Window) !void {
     _ = window;
 }
 
-pub fn setFullscreen(self: *Cocoa, window: *Window, enabled: bool) !void {
-    _ = self;
-    _ = window;
-    _ = enabled;
+pub fn setFullscreen(self: *Cocoa, _: *Window, enabled: bool) !void {
+    const style_mask = c.msgSend(NS.Window.StyleMask, self.window, "styleMask", .{});
+    if (style_mask.full_screen != enabled) self.window.toggleFullScreen(null);
 }
 
 pub fn setPointerVisible(self: *Cocoa, window: *Window, visible: bool) !void {
@@ -176,90 +350,10 @@ pub fn setIcon(self: *Cocoa, window: *Window, size: u32, bgra: []const u8) !void
     _ = bgra;
 }
 
-const cocoa = struct {
-    pub const NSApplication = opaque {};
-    pub const NSWindow = opaque {
-        pub const CreateInfo = extern struct {
-            x: f64,
-            y: f64,
-            width: u32,
-            height: u32,
-            has_position: bool,
-        };
-    };
-    pub const NSView = opaque {};
-    pub const CAMetalLayer = opaque {};
+// Delegate
 
-    pub const CGFloat = if (@bitSizeOf(usize) == 64)
-        f64
-    else
-        f32;
-
-    pub const Event = extern struct {
-        type: EventType,
-
-        data: extern union {
-            resize: extern struct {
-                width: u32,
-                height: u32,
-            },
-            move: extern struct {
-                x: i32,
-                y: i32,
-            },
-
-            mouse_move: extern struct {
-                x: CGFloat,
-                y: CGFloat,
-            },
-            mouse_button: extern struct {
-                button: u32,
-                pressed: bool,
-            },
-            mouse_scroll: extern struct {
-                x: CGFloat,
-                y: CGFloat,
-            },
-
-            key: extern struct {
-                key_code: u32,
-                pressed: bool,
-                repeat: bool,
-            },
-            text_input: extern struct {
-                codepoint: u32,
-            },
-        },
-
-        pub const EventType = enum(c_int) {
-            close,
-
-            resize,
-            move,
-
-            focus_gained,
-            focus_lost,
-
-            mouse_move,
-            mouse_button,
-            mouse_scroll,
-
-            key_down,
-            key_up,
-            text_input,
-        };
-    };
-
-    pub extern fn applicationCreate() *NSApplication;
-    pub extern fn applicationDestroy(app: *NSApplication) void;
-
-    pub extern fn applicationPollEvent(app: *NSApplication, event: *Event) bool;
-
-    pub extern fn windowCreate(app: *NSApplication, create_info: NSWindow.CreateInfo) *NSWindow;
-    pub extern fn windowDestroy(window: *NSWindow) void;
-    pub extern fn windowGetView(window: *NSWindow) ?*NSView;
-    pub extern fn windowGetMetalLayer(window: *NSWindow) ?*CAMetalLayer;
-    pub extern fn windowSetTitle(window: *NSWindow, title: [*:0]const u8) void;
-    pub extern fn windowSetMaxSize(window: *NSWindow, width: CGFloat, height: CGFloat) void;
-    pub extern fn windowSetMinSize(window: *NSWindow, width: CGFloat, height: CGFloat) void;
-};
+fn windowShouldClose(object: *c.Object, _: c.SEL, _: *NS.Window) callconv(.c) bool {
+    const window = object.getIndexedIvars(*Window).*;
+    window.should_close = true;
+    return window.should_close;
+}

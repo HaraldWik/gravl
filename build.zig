@@ -83,17 +83,12 @@ pub fn build(b: *std.Build) void {
             mod.addImport("xkbcommon", xkbcommon);
         },
         .macos => {
-            mod.addCSourceFile(.{
-                .file = b.path("src/Window/Cocoa.m"),
-                .flags = &.{
-                    "-fobjc-arc",
-                },
-                .language = .objective_c,
-            });
+            const macosx = b.dependency("macosx", .{ .target = target, .optimize = optimize });
+
+            mod.addImport("objc", macosx.module("objc"));
+            mod.addImport("frameworks", macosx.module("frameworks"));
 
             mod.linkFramework("Cocoa", .{});
-            mod.linkFramework("QuartzCore", .{});
-            // exe.root_module.linkFramework("Foundation", .{});
         },
         else => {},
     }

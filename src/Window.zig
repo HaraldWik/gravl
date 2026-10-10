@@ -1,6 +1,6 @@
 const Window = @This();
 
-const native_os = @import("builtin").os.tag;
+const native_os = @import("builtin").target.os.tag;
 
 const std = @import("std");
 

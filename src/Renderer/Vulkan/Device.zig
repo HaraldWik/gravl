@@ -19,7 +19,10 @@ pub fn init(gpa: std.mem.Allocator, instance: Instance, physical_device: Physica
         const name = std.mem.sliceTo(&property.extension_name, 0);
 
         if (std.mem.eql(u8, std.mem.span(extension), name)) break;
-    } else return error.MissingDeviceExtension;
+    } else {
+        std.log.err("device extension '{s}' not found", .{extension});
+        return error.DeviceExtensionNotFound;
+    };
 
     const features = instance.proxy.getPhysicalDeviceFeatures(physical_device.handle);
 

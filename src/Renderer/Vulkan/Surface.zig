@@ -5,11 +5,11 @@ const builtin = @import("builtin");
 const std = @import("std");
 const vk = @import("vulkan");
 
-const Window = @import("../Window.zig");
-const Wayland = @import("../Window/Wayland.zig");
-const Xlib = @import("../Window/Xlib.zig");
-const Win32 = @import("../Window/Win32.zig");
-const Cocoa = @import("../Window/Cocoa.zig");
+const Window = @import("../../Window.zig");
+const Wayland = @import("../../Window/Wayland.zig");
+const Xlib = @import("../../Window/Xlib.zig");
+const Win32 = @import("../../Window/Win32.zig");
+const Cocoa = @import("../../Window/Cocoa.zig");
 
 const Instance = @import("Instance.zig");
 
