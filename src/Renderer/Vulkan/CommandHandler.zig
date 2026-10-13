@@ -23,7 +23,7 @@ pub const FrameData = struct {
 
 pub fn init(gpa: std.mem.Allocator, physical_device: PhysicalDevice, device: Device) !CommandHandler {
     const command_pool_create_info: *const vk.CommandPoolCreateInfo = &.{
-        .flags = .{ .reset_command_buffer_bit = true },
+        .flags = .{ .reset_command_buffer = true },
         .queue_family_index = physical_device.graphics_queue_family_index,
     };
     const command_pool = try device.proxy.createCommandPool(command_pool_create_info, @ptrCast(@alignCast(gpa.ptr)));
@@ -41,7 +41,7 @@ pub fn init(gpa: std.mem.Allocator, physical_device: PhysicalDevice, device: Dev
         frame.image_available = try device.proxy.createSemaphore(&.{}, @ptrCast(@alignCast(gpa.ptr)));
 
         const fence_create_info: *const vk.FenceCreateInfo = &.{
-            .flags = .{ .signaled_bit = true },
+            .flags = .{ .signaled = true },
         };
         frame.in_flight_fence = try device.proxy.createFence(fence_create_info, @ptrCast(@alignCast(gpa.ptr)));
     }

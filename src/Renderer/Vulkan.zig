@@ -42,12 +42,12 @@ const libvulkan = switch (builtin.os.tag) {
     else => @compileError("unsupported platform"),
 };
 
-const debug_instance_extensions: []const [*:0]const u8 = if (builtin.mode == .Debug)
+const debug_instance_extensions: []const [*:0]const u8 = if (builtin.mode == .debug)
     &.{"VK_EXT_debug_utils"}
 else
     &.{};
 
-const layers: []const [*:0]const u8 = if (builtin.mode == .Debug)
+const layers: []const [*:0]const u8 = if (builtin.mode == .debug)
     &.{"VK_LAYER_KHRONOS_validation"}
 else
     &.{};
@@ -164,7 +164,7 @@ pub fn submit(self: *Vulkan, frame: Frame) !void {
     };
 
     const wait_stages: []const vk.PipelineStageFlags = &.{
-        .{ .color_attachment_output_bit = true },
+        .{ .color_attachment_output = true },
     };
 
     const submit_info: vk.SubmitInfo = .{
@@ -258,15 +258,15 @@ pub const Frame = struct {
         const image = swapchain.images[swapchain.image_index];
 
         // var barrier: vk.ImageMemoryBarrier2 = .{
-        //     .srcStageMask = .{ .top_of_pipe_bit = true },
+        //     .srcStageMask = .{ .top_of_pipe = true },
         //     .srcAccessMask = .{},
-        //     .dstStageMask = .{ .color_attachment_output_bit = true },
-        //     .dstAccessMask = .{ .color_attachment_write_bit = true },
+        //     .dstStageMask = .{ .color_attachment_output = true },
+        //     .dstAccessMask = .{ .color_attachment_write = true },
         //     .oldLayout = .undefined,
         //     .newLayout = .color_attachment_optimal,
         //     .image = image,
         //     .subresourceRange = .{
-        //         .aspectMask = .{ .color_bit = true },
+        //         .aspectMask = .{ .color = true },
         //         .baseMipLevel = 0,
         //         .levelCount = 1,
         //         .baseArrayLayer = 0,
@@ -294,7 +294,7 @@ pub const Frame = struct {
         const color_barrier = vk.ImageMemoryBarrier{
             .src_access_mask = .{},
             .dst_access_mask = .{
-                .color_attachment_write_bit = true,
+                .color_attachment_write = true,
             },
             .old_layout = .undefined,
             .new_layout = .color_attachment_optimal,
@@ -303,7 +303,7 @@ pub const Frame = struct {
             .image = image,
             .subresource_range = .{
                 .aspect_mask = .{
-                    .color_bit = true,
+                    .color = true,
                 },
                 .base_mip_level = 0,
                 .level_count = 1,
@@ -314,8 +314,8 @@ pub const Frame = struct {
 
         device.proxy.cmdPipelineBarrier(
             frame.command_buffer,
-            .{ .top_of_pipe_bit = true },
-            .{ .color_attachment_output_bit = true },
+            .{ .top_of_pipe = true },
+            .{ .color_attachment_output = true },
             .{},
             null,
             null,
@@ -392,11 +392,11 @@ pub const Frame = struct {
             rendering_info,
         );
 
-        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .vertex_bit = true }}, null);
-        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_control_bit = true }}, null);
-        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_evaluation_bit = true }}, null);
-        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .geometry_bit = true }}, null);
-        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .fragment_bit = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .vertex = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_control = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_evaluation = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .geometry = true }}, null);
+        device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .fragment = true }}, null);
 
         return .{
             .device = device,
@@ -412,7 +412,7 @@ pub const Frame = struct {
         device.proxy.cmdEndRendering(command_buffer);
 
         const color_to_present: vk.ImageMemoryBarrier = .{
-            .src_access_mask = .{ .color_attachment_write_bit = true },
+            .src_access_mask = .{ .color_attachment_write = true },
             .dst_access_mask = .{},
             .old_layout = .color_attachment_optimal,
             .new_layout = .present_src_khr,
@@ -420,7 +420,7 @@ pub const Frame = struct {
             .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
             .image = self.image,
             .subresource_range = .{
-                .aspect_mask = .{ .color_bit = true },
+                .aspect_mask = .{ .color = true },
                 .base_mip_level = 0,
                 .level_count = 1,
                 .base_array_layer = 0,
@@ -430,7 +430,7 @@ pub const Frame = struct {
 
         device.proxy.cmdPipelineBarrier(
             command_buffer,
-            .{ .color_attachment_output_bit = true },
+            .{ .color_attachment_output = true },
             .{},
             .{},
             null,
@@ -452,7 +452,7 @@ pub const Frame = struct {
 
         device.proxy.cmdSetCullMode(
             command_buffer,
-            .{ .back_bit = true },
+            .{ .back = true },
         );
         device.proxy.cmdSetFrontFace(command_buffer, .counter_clockwise);
 
@@ -463,12 +463,12 @@ pub const Frame = struct {
         // multisampling
         device.proxy.cmdSetRasterizationSamplesEXT(
             command_buffer,
-            .{ .@"1_bit" = true },
+            .{ .@"1" = true },
         );
 
         device.proxy.cmdSetSampleMaskEXT(
             command_buffer,
-            .{ .@"1_bit" = true },
+            .{ .@"1" = true },
             &.{0xffffffff},
         );
 
@@ -507,10 +507,10 @@ pub const Frame = struct {
             command_buffer,
             0,
             &.{.{
-                .r_bit = true,
-                .g_bit = true,
-                .b_bit = true,
-                .a_bit = true,
+                .r = true,
+                .g = true,
+                .b = true,
+                .a = true,
             }},
         );
 
@@ -542,7 +542,7 @@ pub const Frame = struct {
     };
 
     pub fn setCullMode(self: Frame, mode: CullMode) void {
-        self.device.proxy.cmdSetCullMode(self.command_buffer, @backingInt(mode));
+        self.device.proxy.cmdSetCullMode(self.command_buffer, @fromBackingInt(@backingInt(mode)));
     }
 };
 
@@ -602,8 +602,8 @@ pub fn Shader(stage: ShaderStage) type {
 
         pub fn initFromSliceWithPushConstants(renderer: Vulkan, source: []const u8, options: InitOptions, push_constant_range: PushConstantRange) InitError!Self {
             const shader_object: ShaderObject = try .init(renderer.gpa, renderer.device, .{
-                .stage = @backingInt(stage),
-                .next_stage = @backingInt(options.next_stage),
+                .stage = @fromBackingInt(@backingInt(stage)),
+                .next_stage = @fromBackingInt(@backingInt(options.next_stage)),
                 .source = source,
                 .entry_name = options.entry_name,
                 .push_constant_ranges = &.{push_constant_range},
@@ -619,7 +619,7 @@ pub fn Shader(stage: ShaderStage) type {
         pub fn bind(self: Self, frame: Frame) void {
             frame.device.proxy.cmdBindShadersEXT(
                 frame.command_buffer,
-                &.{@backingInt(stage)},
+                &.{@fromBackingInt(@backingInt(stage))},
                 &.{self.object.handle},
             );
         }
@@ -728,7 +728,7 @@ pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
 
         const attribute_count = count: {
             var count: usize = 0;
-            for (streams) |VertexType| count += std.meta.fields(VertexType).len;
+            for (streams) |VertexType| count += @typeInfo(VertexType).@"struct".field_names.len;
             break :count count;
         };
 
@@ -738,12 +738,13 @@ pub fn Mesh(streams: []const type, opt_index_type: ?type) type {
             var attribute_index: usize = 0;
 
             for (streams, 0..) |VertexType, binding| {
-                for (std.meta.fields(VertexType)) |field| {
+                const info = @typeInfo(VertexType).@"struct";
+                for (info.field_names, info.field_types) |field_name, FieldType| {
                     descriptions[attribute_index] = .{
                         .location = attribute_index,
                         .binding = binding,
-                        .format = formatOf(field.type),
-                        .offset = @offsetOf(VertexType, field.name),
+                        .format = formatOf(FieldType),
+                        .offset = @offsetOf(VertexType, field_name),
                     };
 
                     attribute_index += 1;

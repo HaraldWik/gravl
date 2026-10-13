@@ -76,12 +76,12 @@ pub const Depth = struct {
             },
             .mip_levels = 1,
             .array_layers = 1,
-            .samples = .{ .@"1_bit" = true },
+            .samples = .{ .@"1" = true },
             .tiling = .optimal,
             .usage = .{
-                .depth_stencil_attachment_bit = true,
-                // .transfer_src_bit = true,
-                // .transfer_dst_bit = true,
+                .depth_stencil_attachment = true,
+                // .transfer_src = true,
+                // .transfer_dst = true,
             },
             .sharing_mode = .exclusive,
             .initial_layout = .undefined,
@@ -96,7 +96,7 @@ pub const Depth = struct {
             .allocation_size = requirements.size,
             .memory_type_index = PhysicalDevice.findMemoryType(
                 requirements.memory_type_bits,
-                .{ .device_local_bit = true },
+                .{ .device_local = true },
                 physical_device.memory_properties,
             ),
         };
@@ -114,8 +114,8 @@ pub const Depth = struct {
             .format = format,
             .subresource_range = .{
                 .aspect_mask = .{
-                    .depth_bit = true,
-                    .stencil_bit = format == .d24_unorm_s8_uint,
+                    .depth = true,
+                    .stencil = format == .d24_unorm_s8_uint,
                 },
                 .base_mip_level = 0,
                 .level_count = 1,
@@ -157,7 +157,7 @@ pub const Depth = struct {
         for (candidates) |format| {
             const props = instance.proxy.getPhysicalDeviceFormatProperties(physical_device.handle, format);
 
-            if (props.optimal_tiling_features.depth_stencil_attachment_bit) return format;
+            if (props.optimal_tiling_features.depth_stencil_attachment) return format;
         }
 
         unreachable;
@@ -230,14 +230,14 @@ fn build(
         .image_extent = extent,
         .image_array_layers = 1,
         .image_usage = .{
-            .color_attachment_bit = true,
+            .color_attachment = true,
         },
         .image_sharing_mode = .exclusive,
         .pre_transform = .{
-            .identity_bit_khr = true,
+            .identity_khr = true,
         },
         .composite_alpha = .{
-            .opaque_bit_khr = true,
+            .opaque_khr = true,
         },
         .present_mode = present_mode,
         .clipped = .true,
@@ -281,7 +281,7 @@ fn build(
             .components = std.mem.zeroes(vk.ComponentMapping),
             .subresource_range = .{
                 .aspect_mask = .{
-                    .color_bit = true,
+                    .color = true,
                 },
                 .level_count = 1,
                 .layer_count = 1,

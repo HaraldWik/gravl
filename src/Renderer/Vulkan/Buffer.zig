@@ -21,7 +21,7 @@ pub const Usage = enum(vk.Flags) {
 pub fn init(comptime T: type, gpa: std.mem.Allocator, physical_device: PhysicalDevice, device: Device, usage: Usage, data: []const T) !Buffer {
     const create_info: *const vk.BufferCreateInfo = &.{
         .size = data.len * @sizeOf(T),
-        .usage = @bitCast(@intFromEnum(usage)),
+        .usage = @bitCast(@backingInt(usage)),
         .sharing_mode = .exclusive,
     };
 
@@ -31,7 +31,7 @@ pub fn init(comptime T: type, gpa: std.mem.Allocator, physical_device: PhysicalD
 
     const memory_type = PhysicalDevice.findMemoryType(
         requirements.memory_type_bits,
-        .{ .host_visible_bit = true, .host_coherent_bit = true },
+        .{ .host_visible = true, .host_coherent = true },
         physical_device.memory_properties,
     );
 

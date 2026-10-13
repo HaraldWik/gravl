@@ -8,7 +8,6 @@ const Window = @import("../Window.zig");
 
 pub fn init(gpa: std.mem.Allocator, window: *Window) Metal {
     _ = gpa;
-    _ = window;
 
     const metal_layer: *CA.MetalLayer = .new();
 
@@ -34,22 +33,25 @@ pub fn init(gpa: std.mem.Allocator, window: *Window) Metal {
 
     const pipeline = try device.newRenderPipelineState(pipeline_descriptor);
 
-    view.setWantsLayer(true);
-    view.setLayer(metal_layer.toLayer());
+    window.inner.view.setWantsLayer(true);
+    window.inner.view.setLayer(metal_layer.toLayer());
 
-    const vertex_buffer = try device.newBufferWithBytes(
-        @ptrCast(&vertices),
-        @sizeOf(@TypeOf(vertices)),
-        .storage_mode_managed,
-    );
-    defer vertex_buffer.release();
+    _ = pipeline;
+    _ = command_queue;
 
-    const index_buffer = try device.newBufferWithBytes(
-        @ptrCast(&indices),
-        @sizeOf(@TypeOf(indices)),
-        .storage_mode_managed,
-    );
-    defer index_buffer.release();
+    // const vertex_buffer = try device.newBufferWithBytes(
+    //     @ptrCast(&vertices),
+    //     @sizeOf(@TypeOf(vertices)),
+    //     .storage_mode_managed,
+    // );
+    // defer vertex_buffer.release();
+
+    // const index_buffer = try device.newBufferWithBytes(
+    //     @ptrCast(&indices),
+    //     @sizeOf(@TypeOf(indices)),
+    //     .storage_mode_managed,
+    // );
+    // defer index_buffer.release();
 
     return .{};
 }

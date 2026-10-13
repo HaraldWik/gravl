@@ -45,7 +45,7 @@ const XdgSessionType = enum(u1) {
 
     pub const env = "XDG_SESSION_TYPE";
 
-    pub fn detect(init: std.process.Init.Minimal) ?@This() {
+    pub fn detect(init: std.process.Init.Minimal) ?XdgSessionType {
         var args = init.args.iterate();
         _ = args.skip();
 
@@ -55,7 +55,7 @@ const XdgSessionType = enum(u1) {
             break arg[identifier.len..];
         } else init.environ.getPosix(env) orelse return null;
 
-        return std.meta.stringToEnum(@This(), session) orelse null;
+        return std.meta.stringToEnum(XdgSessionType, session) orelse null;
     }
 };
 
@@ -67,8 +67,8 @@ pub const Size = packed struct(u64) {
         return a.width == b.width and a.height == b.height;
     }
 
-    pub fn aspect(self: Size) f32 {
-        return @as(f32, @floatFromInt(self.width)) / @as(f32, @floatFromInt(self.height));
+    pub fn aspect(size: Size) f32 {
+        return @as(f32, @floatFromInt(size.width)) / @as(f32, @floatFromInt(size.height));
     }
 
     /// Returns the size components as a tuple.
@@ -78,8 +78,8 @@ pub const Size = packed struct(u64) {
     /// ```zig
     /// const x, const y = size.xy();
     /// ```
-    pub fn xy(self: Size) struct { u32, u32 } {
-        return .{ self.width, self.height };
+    pub fn xy(size: Size) struct { u32, u32 } {
+        return .{ size.width, size.height };
     }
 };
 
@@ -98,8 +98,8 @@ pub const Position = packed struct(i64) {
     /// ```zig
     /// const x, const y = position.xy();
     /// ```
-    pub fn xy(self: Position) struct { i32, i32 } {
-        return .{ self.x, self.y };
+    pub fn xy(position: Position) struct { i32, i32 } {
+        return .{ position.x, position.y };
     }
 };
 
@@ -157,10 +157,10 @@ pub const OpenOptions = struct {
     position: ?Position = null,
 };
 
-pub fn open(self: *Window, gpa: std.mem.Allocator, minimal: std.process.Init.Minimal, options: OpenOptions) !void {
-    self.inner = switch (native_os) {
+pub fn open(window: *Window, init: std.process.Init, options: OpenOptions) !void {
+    window.inner = switch (native_os) {
         .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => blk: {
-            const session_type = XdgSessionType.detect(minimal) orelse .x11;
+            const session_type = XdgSessionType.detect(init.minimal) orelse .x11;
             switch (session_type) {
                 inline else => |inline_session_type| break :blk @unionInit(Inner, @tagName(inline_session_type), undefined),
             }
@@ -168,18 +168,18 @@ pub fn open(self: *Window, gpa: std.mem.Allocator, minimal: std.process.Init.Min
         else => undefined,
     };
 
-    self.* = .{
-        .inner = self.inner,
+    window.* = .{
+        .inner = window.inner,
         .size = options.size,
         .position = options.position orelse .{ .x = 0, .y = 0 },
     };
 
-    try self.call(.open, if (native_os == .windows) .{ gpa, options } else .{options});
+    try window.call(.open, if (native_os == .windows) .{ init.gpa, options } else .{options});
 }
 
-pub fn close(self: *Window) void {
-    self.call(.close, .{}) catch unreachable;
-    self.* = undefined;
+pub fn close(window: *Window) void {
+    window.call(.close, .{}) catch unreachable;
+    window.* = undefined;
 }
 
 /// Allows optional outputs, such as receiving text input events.
@@ -191,87 +191,87 @@ pub const PollOptions = struct {
 
 /// Processes pending window events and updates the window state for the current frame.
 /// Should be called once per frame.
-pub fn poll(self: *Window, options: PollOptions) !void {
-    if (!self.focused) {
-        self.pointer.buttons = .{};
-        self.keyboard = .{};
+pub fn poll(window: *Window, options: PollOptions) !void {
+    if (!window.focused) {
+        window.pointer.buttons = .{};
+        window.keyboard = .{};
     }
 
-    if (self.pointer.movement == .relative) self.pointer.movement = .{ .relative = .{} };
-    self.pointer.axis = .{};
+    if (window.pointer.movement == .relative) window.pointer.movement = .{ .relative = .{} };
+    window.pointer.axis = .{};
 
-    self.keyboard.progress();
-    try self.call(.poll, .{options});
-}
-
-pub fn setTitle(self: *Window, title: [:0]const u8) !void {
-    try self.call(.setTitle, .{title});
+    window.keyboard.progress();
+    try window.call(.poll, .{options});
 }
 
-pub fn setMaxSize(self: *Window, size: ?Window.Size) !void {
-    self.max_size = size;
-    try self.call(.setMaxSize, .{size});
+pub fn setTitle(window: *Window, title: [:0]const u8) !void {
+    try window.call(.setTitle, .{title});
 }
 
-pub fn setMinSize(self: *Window, size: ?Window.Size) !void {
-    self.min_size = size;
-    try self.call(.setMinSize, .{size});
+pub fn setMaxSize(window: *Window, size: ?Window.Size) !void {
+    window.max_size = size;
+    try window.call(.setMaxSize, .{size});
 }
 
-pub fn minimize(self: *Window) !void {
-    try self.call(.minimize, .{});
-}
-pub fn maximize(self: *Window) !void {
-    try self.call(.maximize, .{});
-}
-pub fn restore(self: *Window) !void {
-    try self.call(.restore, .{});
+pub fn setMinSize(window: *Window, size: ?Window.Size) !void {
+    window.min_size = size;
+    try window.call(.setMinSize, .{size});
 }
 
-pub fn setFullscreen(self: *Window, enabled: bool) !void {
-    try self.call(.setFullscreen, .{enabled});
+pub fn minimize(window: *Window) !void {
+    try window.call(.minimize, .{});
+}
+pub fn maximize(window: *Window) !void {
+    try window.call(.maximize, .{});
+}
+pub fn restore(window: *Window) !void {
+    try window.call(.restore, .{});
 }
 
-pub fn setPointerVisible(self: *Window, visible: bool) !void {
-    if (self.pointer.visible == visible) return;
-    self.pointer.visible = visible;
-    try self.call(.setPointerVisible, .{visible});
+pub fn setFullscreen(window: *Window, enabled: bool) !void {
+    try window.call(.setFullscreen, .{enabled});
 }
 
-pub fn setPointerConstraint(self: *Window, constraint: Pointer.Constraint) !void {
-    if (self.pointer.constraint == constraint) return;
-    self.pointer.constraint = constraint;
-    try self.call(.setPointerConstraint, .{constraint});
+pub fn setPointerVisible(window: *Window, visible: bool) !void {
+    if (window.pointer.visible == visible) return;
+    window.pointer.visible = visible;
+    try window.call(.setPointerVisible, .{visible});
 }
 
-pub fn setPointerRelative(self: *Window, enabled: bool) !void {
-    if (self.pointer.is_relative == enabled) return;
-    self.pointer.is_relative = enabled;
-    self.pointer.movement = if (enabled) .{ .relative = .{} } else .{ .position = .{} };
-    try self.call(.setPointerRelative, .{enabled});
+pub fn setPointerConstraint(window: *Window, constraint: Pointer.Constraint) !void {
+    if (window.pointer.constraint == constraint) return;
+    window.pointer.constraint = constraint;
+    try window.call(.setPointerConstraint, .{constraint});
+}
+
+pub fn setPointerRelative(window: *Window, enabled: bool) !void {
+    if (window.pointer.is_relative == enabled) return;
+    window.pointer.is_relative = enabled;
+    window.pointer.movement = if (enabled) .{ .relative = .{} } else .{ .position = .{} };
+    try window.call(.setPointerRelative, .{enabled});
 }
 
 /// icons must be square; `size` specifies both the width and height.
 /// `bgra` must contain exactly `size * size * 4` bytes of BGRA8 pixel data.
-pub fn setIcon(self: *Window, bgra: []const u8) !void {
+pub fn setIcon(window: *Window, bgra: []const u8) !void {
     const channels = 4;
     const size: u32 = std.math.sqrt(@divExact(bgra.len, channels));
     std.debug.assert(size <= 256);
-    try self.call(.setIcon, .{ size, bgra });
+    try window.call(.setIcon, .{ size, bgra });
 }
 
-fn call(self: *Window, function_name: @EnumLiteral(), args: anytype) !void {
+fn call(window: *Window, function_name: @EnumLiteral(), args: anytype) !void {
     switch (native_os) {
-        .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => switch (self.inner) {
+        .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => switch (window.inner) {
             inline else => |*inner| {
                 const function = @field(@TypeOf(inner.*), @tagName(function_name));
-                return @call(.always_inline, function, .{ inner, self } ++ args);
+                return @call(.always_inline, function, .{ inner, window } ++ args);
             },
         },
         else => {
-            const inner = &self.inner;
-            const function = @field(@TypeOf(self.inner), @tagName(function_name));
-            return @call(.always_inline, function, .{ inner, self } ++ args);
+            const inner = &window.inner;
+            const function = @field(@TypeOf(window.inner), @tagName(function_name));
+            return @call(.always_inline, function, .{ inner, window } ++ args);
         },
     }
 }

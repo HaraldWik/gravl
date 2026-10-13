@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
     run_cmd.addArtifactArg(game);
-    if (b.args) |args| run_cmd.addArgs(args);
+    run_cmd.addPassthruArgs();
 
     const package_step = b.step("package", "Package everything into a folder");
     package_step.dependOn(b.getInstallStep());

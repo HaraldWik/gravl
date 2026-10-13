@@ -32,9 +32,10 @@ pub const ffi = struct {
         info: *const fn () callconv(.c) Info,
 
         pub fn load(dynlib: *DynLib) !Table {
+            const info = @typeInfo(Table).@"struct";
             var table: Table = undefined;
-            inline for (std.meta.fields(Table)) |field| {
-                @field(table, field.name) = dynlib.lookup(field.type, field.name) orelse return error.TableLookup;
+            inline for (info.field_names, info.field_types) |field_name, FieldType| {
+                @field(table, field_name) = dynlib.lookup(FieldType, field_name) orelse return error.TableLookup;
             }
             return table;
         }

@@ -23,6 +23,8 @@ pub fn build(b: *std.Build) void {
 
     const win32 = b.dependency("win32", .{}).module("win32");
 
+    const macosx = b.dependency("macosx", .{ .target = target, .optimize = optimize });
+
     const mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -30,6 +32,8 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "vulkan", .module = vulkan },
             .{ .name = "win32", .module = win32 },
+            .{ .name = "objc", .module = macosx.module("objc") },
+            .{ .name = "frameworks", .module = macosx.module("frameworks") },
         },
         .link_libc = switch (target.result.os.tag) {
             .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => true,
@@ -71,23 +75,10 @@ pub fn build(b: *std.Build) void {
 
             mod.addImport("wayland", wayland);
 
-            const libxkbcommon = b.dependency("libxkbcommon", .{
-                .target = target,
-                .optimize = optimize,
-                .@"xkb-config-root" = "/usr/share/X11/xkb",
-                .@"x-locale-root" = "/usr/share/X11/locale",
-            }).artifact("xkbcommon");
             const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
-            xkbcommon.linkLibrary(libxkbcommon);
-
             mod.addImport("xkbcommon", xkbcommon);
         },
         .macos => {
-            const macosx = b.dependency("macosx", .{ .target = target, .optimize = optimize });
-
-            mod.addImport("objc", macosx.module("objc"));
-            mod.addImport("frameworks", macosx.module("frameworks"));
-
             mod.linkFramework("Cocoa", .{});
         },
         else => {},

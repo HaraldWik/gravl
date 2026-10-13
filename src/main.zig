@@ -4,7 +4,7 @@ const std = @import("std");
 const DynLib = @import("DynLib.zig");
 const Game = @import("Game.zig");
 const Window = @import("Window.zig");
-const Renderer = @import("Renderer.zig");
+const Renderer = @import("Renderer/Vulkan.zig"); // TMP
 const m = @import("math.zig");
 const loader = @import("loader.zig");
 
@@ -99,7 +99,7 @@ pub fn main(init: std.process.Init) !void {
     std.log.info("{s} ({f})", .{ game.name, game.version });
 
     var window: Window = undefined;
-    try window.open(gpa, init.minimal, .{
+    try window.open(init, .{
         .app_id = game.id,
         .title = game.name,
         .size = .{

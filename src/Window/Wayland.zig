@@ -9,7 +9,7 @@ const wp = @import("wayland").client.wp;
 const xdg = @import("wayland").client.xdg;
 const zxdg = @import("wayland").client.zxdg;
 const zwp = @import("wayland").client.zwp;
-const xkbcommon = @import("xkbcommon");
+const xkbcommon = @import("xkbcommon").c;
 
 window: *Window,
 
@@ -27,9 +27,9 @@ toplevel_icon_manager: ?*xdg.ToplevelIconManagerV1 = null,
 pointer: ?*wl.Pointer = null,
 keyboard: ?*wl.Keyboard = null,
 xkb: struct {
-    context: *xkbcommon.Context,
-    state: ?*xkbcommon.State = null,
-    keymap: ?*xkbcommon.Keymap = null,
+    context: *xkbcommon.xkb_context,
+    state: ?*xkbcommon.xkb_state = null,
+    keymap: ?*xkbcommon.xkb_keymap = null,
     keymap_data: []align(std.heap.page_size_min) u8 = &.{},
     modifiers: packed struct {
         depressed: u32 = 0,
@@ -37,6 +37,7 @@ xkb: struct {
         locked: u32 = 0,
         group: u32 = 0,
     } = .{},
+    err: ?anyerror = null,
 },
 repeat_key: RepeatKey = .{},
 
@@ -57,7 +58,7 @@ pointer_enter_serial: u32 = 0,
 poll_options: *const Window.PollOptions = &.{},
 
 const RepeatKey = struct {
-    keysym: xkbcommon.Keysym = .NoSymbol,
+    keysym: xkbcommon.xkb_keysym_t = xkbcommon.XKB_KEY_NoSymbol,
     buffer: [8]u8 = undefined,
     text_len: usize = 0,
 
@@ -125,7 +126,7 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     wm_base.setListener(?*anyopaque, xdgWmBaseListener, null);
     seat.setListener(*Wayland, seatListener, self);
 
-    const xkb_context = xkbcommon.Context.new(.no_flags) orelse return error.CreateXkbuserdata;
+    const xkb_context = xkbcommon.xkb_context_new(0) orelse return error.ContextCreationFailed;
     self.xkb = .{ .context = xkb_context };
 
     if (display.roundtrip() != .SUCCESS) return error.Roundtrip;
@@ -237,9 +238,11 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
 
     if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
 
+    if (self.xkb.err) |err| return err;
+
     const writer = options.text orelse return;
 
-    if (self.repeat_key.keysym == .NoSymbol or self.repeat_key.text_len == 0 or self.repeat_key.info.rate <= 0) return;
+    if (self.repeat_key.keysym == xkbcommon.XKB_KEY_NoSymbol or self.repeat_key.text_len == 0 or self.repeat_key.info.rate <= 0) return;
 
     const now_ms = RepeatKey.nowMs();
     if (now_ms < self.repeat_key.next_time_ms) return;
@@ -407,11 +410,12 @@ const RegistryData = struct {
     xdg_toplevel_icon_manager_v1: ?*xdg.ToplevelIconManagerV1 = null,
 
     pub fn listener(registry: *wl.Registry, event: wl.Registry.Event, self: *RegistryData) void {
+        const info = @typeInfo(RegistryData).@"struct";
         switch (event) {
-            .global => |global| inline for (std.meta.fields(RegistryData)) |field| {
-                const GlobalType = std.meta.Child(std.meta.Child(field.type));
+            .global => |global| inline for (info.field_names, info.field_types) |field_name, FieldType| {
+                const GlobalType = std.meta.Child(std.meta.Child(FieldType));
                 if (std.mem.orderZ(u8, global.interface, GlobalType.interface.name) == .eq) {
-                    @field(self.*, field.name) = registry.bind(global.name, GlobalType, GlobalType.interface.version) catch return;
+                    @field(self.*, field_name) = registry.bind(global.name, GlobalType, GlobalType.interface.version) catch return;
                     return;
                 }
             },
@@ -520,14 +524,28 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
                 xkb.keymap_data = &.{};
             }
 
-            xkb.keymap_data = std.posix.mmap(null, keymap.size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, keymap.fd, 0) catch return;
-            xkb.keymap = xkbcommon.Keymap.newFromBuffer(xkb.context, xkb.keymap_data.ptr, xkb.keymap_data.len, .text_v1, .no_flags) orelse return;
-            xkb.state = xkbcommon.State.new(xkb.keymap.?) orelse return;
-            _ = xkb.state.?.updateMask(
+            xkb.keymap_data = std.posix.mmap(null, keymap.size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, keymap.fd, 0) catch |err| {
+                xkb.err = err;
+                return;
+            };
+            xkb.keymap = xkbcommon.xkb_keymap_new_from_string(
+                xkb.context,
+                @ptrCast(xkb.keymap_data),
+                xkbcommon.XKB_KEYMAP_FORMAT_TEXT_V1,
+                xkbcommon.XKB_KEYMAP_COMPILE_NO_FLAGS,
+            ) orelse {
+                xkb.err = error.KeymapCreationFailed;
+                return;
+            };
+            xkb.state = xkbcommon.xkb_state_new(xkb.keymap.?) orelse {
+                xkb.err = error.XkbStateNew;
+                return;
+            };
+            _ = xkb.state.?.update_mask(
                 xkb.modifiers.depressed,
                 xkb.modifiers.latched,
                 xkb.modifiers.locked,
-                xkb.modifiers.group,
+                @bitCast(xkb.modifiers.group),
                 0,
                 0,
             );
@@ -541,7 +559,7 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
             };
             if (xkb.state == null or xkb.keymap == null) return;
 
-            _ = xkb.state.?.updateMask(modifiers.mods_depressed, modifiers.mods_latched, modifiers.mods_locked, modifiers.group, 0, 0);
+            _ = xkb.state.?.update_mask(modifiers.mods_depressed, modifiers.mods_latched, modifiers.mods_locked, @bitCast(modifiers.group), 0, 0);
         },
         .enter => |enter| {
             window.focused = true;
@@ -560,35 +578,35 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
         .key => |key| {
             if (xkb.state == null or xkb.keymap == null) return;
 
-            const keysym = xkb.state.?.keyGetOneSym(key.key + 8);
+            const keysym = xkb.state.?.key_get_one_sym(key.key + 8);
 
             if (self.poll_options.text) |writer| switch (key.state) {
                 .pressed => {
                     var buffer: [8]u8 = undefined;
-                    var len: usize = @intCast(keysym.toUTF8(&buffer, buffer.len));
+                    var utf8 = buffer[0..@intCast(xkbcommon.xkb_keysym_to_utf8(keysym, &buffer, buffer.len))];
 
                     var write: usize = 0;
-                    for (buffer[0..len]) |c| {
+                    for (utf8) |c| {
                         if (!std.ascii.isControl(c)) {
                             buffer[write] = c;
                             write += 1;
                         }
                     }
-                    len = write;
+                    utf8.len = write;
 
-                    if (len > 0) {
-                        writer.writeAll(buffer[0..len]) catch {};
+                    if (utf8.len > 0) {
+                        writer.writeAll(utf8) catch {};
 
                         self.repeat_key.keysym = keysym;
 
-                        @memcpy(self.repeat_key.buffer[0..len], buffer[0..len]);
-                        self.repeat_key.text_len = len;
+                        @memcpy(self.repeat_key.buffer[0..utf8.len], utf8);
+                        self.repeat_key.text_len = utf8.len;
                         self.repeat_key.scheduleInitial();
                     }
                 },
                 .released => {
                     if (self.repeat_key.keysym == keysym) {
-                        self.repeat_key.keysym = .NoSymbol;
+                        self.repeat_key.keysym = xkbcommon.XKB_KEY_NoSymbol;
                         self.repeat_key.text_len = 0;
                     }
                 },
@@ -605,7 +623,7 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
 
             // Enter events report keys already held on focus gain with time = 0.
             // Treat them as repeats instead of new key presses.
-            if (key.time == 0) keyboard.previous.set(@intFromEnum(k));
+            if (key.time == 0) keyboard.previous.set(@backingInt(k));
         },
         .repeat_info => |repeat_info| {
             self.repeat_key.info = repeat_info;
@@ -785,6 +803,7 @@ const Loader = struct {
     wl_proxy_marshal_array_constructor_versioned: ?*const fn (proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface, version: u32) callconv(.c) ?*wl.Proxy = null,
     wl_proxy_marshal_array_constructor: ?*const fn (proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface) callconv(.c) ?*wl.Proxy = null,
     wl_proxy_marshal_array: ?*const fn (proxy: *wl.Proxy, opcode: u32, args: ?[*]wl.Argument) callconv(.c) void = null,
+    wl_proxy_marshal_array_flags: ?*const fn (proxy: *wl.Proxy, opcode: u32, interface: ?*const wl.Interface, version: u32, flags: u32, args: ?[*]wl.Argument) callconv(.c) ?*wl.Proxy = null,
     wl_proxy_set_queue: ?*const fn (proxy: *wl.Proxy, queue: *wl.EventQueue) callconv(.c) void = null,
 
     comptime {
@@ -820,15 +839,18 @@ const Loader = struct {
         export fn wl_proxy_marshal_array_constructor_versioned(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface, version: u32) ?*wl.Proxy { return loader.wl_proxy_marshal_array_constructor_versioned.?(proxy, opcode, args, interface, version); }
         export fn wl_proxy_marshal_array_constructor(proxy: *wl.Proxy, opcode: u32, args: [*]wl.Argument, interface: *const wl.Interface) ?*wl.Proxy { return loader.wl_proxy_marshal_array_constructor.?(proxy, opcode, args, interface); }
         export fn wl_proxy_marshal_array(proxy: *wl.Proxy, opcode: u32, args: ?[*]wl.Argument) void { loader.wl_proxy_marshal_array.?(proxy, opcode, args); }
+        export fn wl_proxy_marshal_array_flags(proxy: *wl.Proxy, opcode: u32, interface: ?*const wl.Interface, version: u32, flags: u32, args: ?[*]wl.Argument) ?*wl.Proxy { return loader.wl_proxy_marshal_array_flags.?(proxy, opcode, interface, version, flags, args); }
         export fn wl_proxy_set_queue(proxy: *wl.Proxy, queue: *wl.EventQueue) void { loader.wl_proxy_set_queue.?(proxy, queue); }
         // zig fmt: on
+
     };
 
     fn load() !void {
+        const info = @typeInfo(Loader).@"struct";
         loader.lib = try .openZ("libwayland-client.so.0");
-        inline for (std.meta.fields(@This())) |field| {
-            if (field.type != std.DynLib) {
-                @field(loader, field.name) = loader.lib.lookup(field.type, field.name) orelse @panic(field.name);
+        inline for (info.field_names, info.field_types) |field_name, FieldType| {
+            if (FieldType != std.DynLib) {
+                @field(loader, field_name) = loader.lib.lookup(FieldType, field_name) orelse @panic(field_name);
             }
         }
     }

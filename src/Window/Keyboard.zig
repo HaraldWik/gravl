@@ -2,7 +2,7 @@ const Keyboard = @This();
 
 const std = @import("std");
 const win32 = @import("win32").everything;
-const xkb = @import("xkbcommon");
+const xkb = @import("xkbcommon").c;
 
 previous: BitSet = .empty,
 current: BitSet = .empty,
@@ -129,7 +129,7 @@ pub const Key = enum(u8) {
     num_lock,
     scroll_lock,
 
-    pub const count = @typeInfo(Key).@"enum".fields.len;
+    pub const count = @typeInfo(Key).@"enum".field_names.len;
 
     pub const State = enum(u2) {
         up = 0,
@@ -155,14 +155,14 @@ pub const Key = enum(u8) {
 };
 
 pub fn get(self: Keyboard, key: Key) Key.State {
-    const down = self.current.isSet(@intFromEnum(key));
-    const prev_down = self.previous.isSet(@intFromEnum(key));
+    const down = self.current.isSet(@backingInt(key));
+    const prev_down = self.previous.isSet(@backingInt(key));
 
     return if (down) if (prev_down) .repeat else .press else if (prev_down) .release else .up;
 }
 
 pub fn isDown(self: Keyboard, key: Key) bool {
-    const down = self.current.isSet(@intFromEnum(key));
+    const down = self.current.isSet(@backingInt(key));
     return down;
 }
 
@@ -179,11 +179,11 @@ pub fn anyUp(self: Keyboard) bool {
 }
 
 pub fn press(self: *Keyboard, key: Key) void {
-    self.current.set(@intFromEnum(key));
+    self.current.set(@backingInt(key));
 }
 
 pub fn release(self: *Keyboard, key: Key) void {
-    self.current.unset(@intFromEnum(key));
+    self.current.unset(@backingInt(key));
 }
 
 pub fn progress(self: *Keyboard) void {
@@ -201,7 +201,7 @@ pub fn formatState(self: Keyboard, w: *std.Io.Writer, comptime state: Key.State)
     var any_found = false;
 
     for (0..Key.count) |i| {
-        const key: Key = @enumFromInt(i);
+        const key: Key = @fromBackingInt(@intCast(i));
 
         if (self.get(key) != state) continue;
 
@@ -223,7 +223,7 @@ pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {
     const scancode: u32 = (@as(u32, @intCast(lParam)) >> 16) & 0xFF;
     const extended: bool = ((lParam >> 24) & 1) != 0;
 
-    const key: win32.VIRTUAL_KEY = @enumFromInt(@as(u16, @truncate(wParam)));
+    const key: win32.VIRTUAL_KEY = @fromBackingInt(@intCast(@as(u16, @truncate(wParam))));
 
     return switch (key) {
         // Letters
@@ -349,118 +349,119 @@ pub fn fromWin32(wParam: win32.WPARAM, lParam: win32.LPARAM) ?Key {
     };
 }
 
-pub fn fromXkb(symbol: xkb.Keysym) ?Key {
+pub fn fromXkb(symbol: xkb.xkb_keysym_t) ?Key {
     return switch (symbol) {
-        .A, .a => .a,
-        .B, .b => .b,
-        .C, .c => .c,
-        .D, .d => .d,
-        .E, .e => .e,
-        .F, .f => .f,
-        .G, .g => .g,
-        .H, .h => .h,
-        .I, .i => .i,
-        .J, .j => .j,
-        .K, .k => .k,
-        .L, .l => .l,
-        .M, .m => .m,
-        .N, .n => .n,
-        .O, .o => .o,
-        .P, .p => .p,
-        .Q, .q => .q,
-        .R, .r => .r,
-        .S, .s => .s,
-        .T, .t => .t,
-        .U, .u => .u,
-        .V, .v => .v,
-        .W, .w => .w,
-        .X, .x => .x,
-        .Y, .y => .y,
-        .Z, .z => .z,
+        0 => null,
+        0x0041, 0x0061 => .a, // A, a
+        0x0042, 0x0062 => .b, // B, b
+        0x0043, 0x0063 => .c, // C, c
+        0x0044, 0x0064 => .d, // D, d
+        0x0045, 0x0065 => .e, // E, e
+        0x0046, 0x0066 => .f, // F, f
+        0x0047, 0x0067 => .g, // G, g
+        0x0048, 0x0068 => .h, // H, h
+        0x0049, 0x0069 => .i, // I, i
+        0x004A, 0x006A => .j, // J, j
+        0x004B, 0x006B => .k, // K, k
+        0x004C, 0x006C => .l, // L, l
+        0x004D, 0x006D => .m, // M, m
+        0x004E, 0x006E => .n, // N, n
+        0x004F, 0x006F => .o, // O, o
+        0x0050, 0x0070 => .p, // P, p
+        0x0051, 0x0071 => .q, // Q, q
+        0x0052, 0x0072 => .r, // R, r
+        0x0053, 0x0073 => .s, // S, s
+        0x0054, 0x0074 => .t, // T, t
+        0x0055, 0x0075 => .u, // U, u
+        0x0056, 0x0076 => .v, // V, v
+        0x0057, 0x0077 => .w, // W, w
+        0x0058, 0x0078 => .x, // X, x
+        0x0059, 0x0079 => .y, // Y, y
+        0x005A, 0x007A => .z, // Z, z
 
-        .@"0" => .@"0",
-        .@"1" => .@"1",
-        .@"2" => .@"2",
-        .@"3" => .@"3",
-        .@"4" => .@"4",
-        .@"5" => .@"5",
-        .@"6" => .@"6",
-        .@"7" => .@"7",
-        .@"8" => .@"8",
-        .@"9" => .@"9",
+        0x0030 => .@"0",
+        0x0031 => .@"1",
+        0x0032 => .@"2",
+        0x0033 => .@"3",
+        0x0034 => .@"4",
+        0x0035 => .@"5",
+        0x0036 => .@"6",
+        0x0037 => .@"7",
+        0x0038 => .@"8",
+        0x0039 => .@"9",
 
-        .F1 => .f1,
-        .F2 => .f2,
-        .F3 => .f3,
-        .F4 => .f4,
-        .F5 => .f5,
-        .F6 => .f6,
-        .F7 => .f7,
-        .F8 => .f8,
-        .F9 => .f9,
-        .F10 => .f10,
-        .F11 => .f11,
-        .F12 => .f12,
+        0xFFBE => .f1, // F1
+        0xFFBF => .f2, // F2
+        0xFFC0 => .f3, // F3
+        0xFFC1 => .f4, // F4
+        0xFFC2 => .f5, // F5
+        0xFFC3 => .f6, // F6
+        0xFFC4 => .f7, // F7
+        0xFFC5 => .f8, // F8
+        0xFFC6 => .f9, // F9
+        0xFFC7 => .f10, // F10
+        0xFFC8 => .f11, // F11
+        0xFFC9 => .f12, // F12
 
-        .Shift_L => .left_shift,
-        .Shift_R => .right_shift,
-        .Control_L => .left_control,
-        .Control_R => .right_control,
-        .Alt_L => .left_alt,
-        .Alt_R => .right_alt,
-        .Super_L => .left_super,
-        .Super_R => .right_super,
+        0xFFE1 => .left_shift, // Shift_L
+        0xFFE2 => .right_shift, // Shift_R
+        0xFFE3 => .left_control, // Control_L
+        0xFFE4 => .right_control, // Control_R
+        0xFFE9 => .left_alt, // Alt_L
+        0xFFEA => .right_alt, // Alt_R
+        0xFFEB => .left_super, // Super_L
+        0xFFEC => .right_super, // Super_R
 
-        .Escape => .escape,
-        .Return => .enter,
-        .Tab => .tab,
-        .BackSpace => .backspace,
-        .space => .space,
+        0xFF1B => .escape, // Escape
+        0xFF0D => .enter, // Return
+        0xFF09 => .tab, // Tab
+        0xFF08 => .backspace, // BackSpace
+        0x0020 => .space, // space
 
-        .Insert => .insert,
-        .Delete => .delete,
-        .Home => .home,
-        .End => .end,
-        .Page_Up => .page_up,
-        .Page_Down => .page_down,
+        0xFF63 => .insert, // Insert
+        0xFFFF => .delete, // Delete
+        0xFF50 => .home, // Home
+        0xFF57 => .end, // End
+        0xFF55 => .page_up, // Page_Up
+        0xFF56 => .page_down, // Page_Down
 
-        .Up => .up,
-        .Down => .down,
-        .Left => .left,
-        .Right => .right,
+        0xFF52 => .up, // Up
+        0xFF54 => .down, // Down
+        0xFF51 => .left, // Left
+        0xFF53 => .right, // Right
 
-        .minus => .minus,
-        .equal => .equal,
-        .bracketleft => .left_bracket,
-        .bracketright => .right_bracket,
-        .semicolon => .semicolon,
-        .apostrophe => .apostrophe,
-        .comma => .comma,
-        .period => .period,
-        .slash => .slash,
-        .backslash => .backslash,
-        .grave => .grave,
+        0x002D => .minus, // minus
+        0x003D => .equal, // equal
+        0x005B => .left_bracket, // bracketleft
+        0x005D => .right_bracket, // bracketright
+        0x003B => .semicolon, // semicolon
+        0x0027 => .apostrophe, // apostrophe
+        0x002C => .comma, // comma
+        0x002E => .period, // period
+        0x002F => .slash, // slash
+        0x005C => .backslash, // backslash
+        0x0060 => .grave, // grave
 
-        .KP_0 => .keypad_0,
-        .KP_1 => .keypad_1,
-        .KP_2 => .keypad_2,
-        .KP_3 => .keypad_3,
-        .KP_4 => .keypad_4,
-        .KP_5 => .keypad_5,
-        .KP_6 => .keypad_6,
-        .KP_7 => .keypad_7,
-        .KP_8 => .keypad_8,
-        .KP_9 => .keypad_9,
-        .KP_Add => .keypad_add,
-        .KP_Subtract => .keypad_subtract,
-        .KP_Multiply => .keypad_multiply,
-        .KP_Divide => .keypad_divide,
-        .KP_Enter => .keypad_enter,
-        .KP_Decimal => .keypad_decimal,
+        0xFFB0 => .keypad_0, // KP_0
+        0xFFB1 => .keypad_1, // KP_1
+        0xFFB2 => .keypad_2, // KP_2
+        0xFFB3 => .keypad_3, // KP_3
+        0xFFB4 => .keypad_4, // KP_4
+        0xFFB5 => .keypad_5, // KP_5
+        0xFFB6 => .keypad_6, // KP_6
+        0xFFB7 => .keypad_7, // KP_7
+        0xFFB8 => .keypad_8, // KP_8
+        0xFFB9 => .keypad_9, // KP_9
+        0xFFAB => .keypad_add, // KP_Add
+        0xFFAD => .keypad_subtract, // KP_Subtract
+        0xFFAA => .keypad_multiply, // KP_Multiply
+        0xFFAF => .keypad_divide, // KP_Divide
+        0xFF8D => .keypad_enter, // KP_Enter
+        0xFFAE => .keypad_decimal, // KP_Decimal
 
-        .Caps_Lock => .caps_lock,
-        .Num_Lock => .num_lock,
-        .Scroll_Lock => .scroll_lock,
+        0xFFE5 => .caps_lock, // Caps_Lock
+        0xFF7F => .num_lock, // Num_Lock
+        0xFF14 => .scroll_lock, // Scroll_Lock
 
         else => null,
     };

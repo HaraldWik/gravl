@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .wayland = .{
-            .url = "git+https://github.com/HaraldWik/zig-wayland#6f8c31f47299b70cf02e8c7d15e07379f3dceb05",
-            .hash = "wayland-0.5.0-dev-lQa1kon9AQAqOJxIINbYDrDekiRI5p9bnvtFoi6Pic34",
+            .url = "git+https://codeberg.org/ifreund/zig-wayland#94db7ba4e0a6b4780a16dbc74c7a2c88f1ebf502",
+            .hash = "wayland-0.8.0-dev-lQa1kuf8AQCeoam8G-XPyaIYvIOk3_wgsspwi4nT_L5q",
         },
         .wayland_protocols = .{
             .url = "git+https://gitlab.freedesktop.org/wayland/wayland-protocols#02e63e74a807afed95bc25a386173110afef24e3",
@@ -18,12 +18,8 @@
         },
 
         .xkbcommon = .{
-            .url = "git+https://github.com/ifreund/zig-xkbcommon/#6c2f41e269adde0d2cd58d20c02c4f8803d83eb1",
-            .hash = "xkbcommon-0.5.0-dev-VDqIe0y2AgA1RzA2ICMdGhaAgSXdhtRTbYybQQu7WfOa",
-        },
-        .libxkbcommon = .{
-            .url = "git+https://github.com/HaraldWik/libxkbcommon#5caf185f3c1981cc56869c690361902e5612047e",
-            .hash = "libxkbcommon-1.11.0-93LaF31wAgDBmMuuxfPTZ2xJiOc3ZOb5OwOVi4FlD5iy",
+            .url = "git+https://github.com/HaraldWik/xkbcommon-zig#0184b34980be1cf564b9c0595816dd15ec13e90c",
+            .hash = "xkbcommon-0.0.0-vuYiCfohAABO_PKVIy_36Nie4wpXpf110FQTmB3jT9vj",
         },
 
         .macosx = .{
@@ -32,8 +28,8 @@
         },
 
         .vulkan = .{
-            .url = "git+https://github.com/Snektron/vulkan-zig?ref=zig-0.16-compat#b496a6a561ffbbeb530b0f9ed4e059f88c0723a5",
-            .hash = "vulkan-0.0.0-r7Ytx7N9AwD7IZt5_XNHtkJ4G9qY0pCH-cpcOsbL8wzD",
+            .url = "git+https://github.com/Snektron/vulkan-zig#f9688c6f4ebcb930f67044698ddd1322442e714b",
+            .hash = "vulkan-0.0.0-r7Ytx4yGAwDZf0XsT6_L1ol_XUAkyOgOyBqamf8begA0",
         },
         .vulkan_headers = .{
             .url = "git+https://github.com/KhronosGroup/Vulkan-Headers#f6a6f7ab165cedbfa2a7d0c93fe27a2d01ce09c8",

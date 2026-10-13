@@ -10,15 +10,15 @@ handle: vk.DebugUtilsMessengerEXT,
 pub fn init(gpa: std.mem.Allocator, instance: Instance) vk.InstanceWrapper.CreateDebugUtilsMessengerEXTError!DebugMessenger {
     const create_info: *const vk.DebugUtilsMessengerCreateInfoEXT = &.{
         .message_severity = .{
-            // .verbose_bit_ext = true,
-            // .info_bit_ext = true,
-            .warning_bit_ext = true,
-            .error_bit_ext = true,
+            // .verbose_ext = true,
+            // .info_ext = true,
+            .warning_ext = true,
+            .error_ext = true,
         },
         .message_type = .{
-            .general_bit_ext = true,
-            .validation_bit_ext = true,
-            .performance_bit_ext = true,
+            .general_ext = true,
+            .validation_ext = true,
+            .performance_ext = true,
         },
         .pfn_user_callback = callback,
         .p_user_data = null,
@@ -41,13 +41,13 @@ fn callback(
     _ = message_types;
     _ = userdata;
 
-    const level: std.log.Level = if (severity.error_bit_ext)
+    const level: std.log.Level = if (severity.error_ext)
         .err
-    else if (severity.warning_bit_ext)
+    else if (severity.warning_ext)
         .warn
-    else if (severity.info_bit_ext)
+    else if (severity.info_ext)
         .info
-    else if (severity.verbose_bit_ext)
+    else if (severity.verbose_ext)
         .debug
     else
         unreachable;

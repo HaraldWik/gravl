@@ -105,7 +105,7 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
 
         var event_masks = [_]xi.Event.Mask{
             .{
-                .device_id = @intFromEnum(xi.DeviceSelector.all_devices),
+                .device_id = @backingInt(xi.DeviceSelector.all_devices),
                 .mask_len = mask.len,
                 .mask = &mask,
             },
@@ -141,8 +141,8 @@ pub fn open(self: *Xlib, window: *Window, options: Window.OpenOptions) !void {
     errdefer _ = xlib.procs.XDestroyIC.?(self.xic);
 
     var atoms: Atoms = undefined;
-    inline for (std.meta.fields(Atoms)) |field| {
-        @field(atoms, field.name) = xlib.procs.XInternAtom.?(display, field.name.ptr, xlib.FALSE);
+    inline for (@typeInfo(Atoms).@"struct".field_names) |field_name| {
+        @field(atoms, field_name) = xlib.procs.XInternAtom.?(display, field_name.ptr, xlib.FALSE);
     }
 
     _ = xlib.procs.XSetWMProtocols.?(
@@ -217,7 +217,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
         switch (event.type) {
             .client_message => {
                 const client = event.client;
-                if (client.data.l[0] == @intFromEnum(self.atoms.WM_DELETE_WINDOW)) window.should_close = true;
+                if (client.data.l[0] == @backingInt(self.atoms.WM_DELETE_WINDOW)) window.should_close = true;
             },
 
             .expose => {
@@ -281,7 +281,7 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
             },
             .key_press => {
                 var keysym = xlib.procs.XLookupKeysym.?(&event.key, 0);
-                if (Window.Keyboard.fromXkb(@enumFromInt(keysym))) |key| {
+                if (Window.Keyboard.fromXkb(@intCast(keysym))) |key| {
                     keyboard.press(key);
                 }
 
@@ -314,14 +314,14 @@ pub fn poll(self: *Xlib, window: *Window, options: Window.PollOptions) !void {
             },
             .key_release => {
                 const keysym = xlib.procs.XLookupKeysym.?(&event.key, 0);
-                const key = Window.Keyboard.fromXkb(@enumFromInt(keysym)) orelse continue;
+                const key = Window.Keyboard.fromXkb(@intCast(keysym)) orelse continue;
                 keyboard.release(key);
             },
             .generic_event => if (event.generic.extension == xi_opcode) {
                 if (xlib.procs.XGetEventData.?(display, &event.generic) == 0) continue;
                 const xi_event: *xi.Event = @ptrCast(@alignCast(event.generic.data.?));
 
-                switch (@as(xi.Event.Type, @enumFromInt(event.generic.evtype))) {
+                switch (@as(xi.Event.Type, @fromBackingInt(@intCast(event.generic.evtype)))) {
                     .motion => {
                         const motion = xi_event.motion;
 
@@ -538,7 +538,7 @@ pub fn setIcon(self: *Xlib, _: *Window, size: u32, bgra: []const u8) !void {
 fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long) void {
     var event: xlib.Event = .{
         .client = .{
-            .type = @intFromEnum(xlib.Event.Type.client_message),
+            .type = @backingInt(xlib.Event.Type.client_message),
             .serial = 0,
             .send_event = xlib.TRUE,
             .display = self.display,
@@ -548,8 +548,8 @@ fn setWmState(self: *Xlib, state1: xlib.Atom, state2: xlib.Atom, action: c_long)
             .data = .{
                 .l = .{
                     action, // 0 remove, 1 add, 2 toggle
-                    @intCast(@intFromEnum(state1)),
-                    @intCast(@intFromEnum(state2)),
+                    @intCast(@backingInt(state1)),
+                    @intCast(@backingInt(state2)),
                     1, // source indication: application
                     0,
                 },
@@ -1198,15 +1198,17 @@ const xlib = struct {
         XUngrabPointer: ?*const fn (*Display, time: Time) callconv(.c) c_int,
 
         fn load() !void {
+            const info = @typeInfo(ProcTable).@"struct";
+
             procs.lib = std.DynLib.openZ("libX11.so") catch |err| return switch (err) {
                 error.FileNotFound => error.LibX11NotInstalled,
                 else => err,
             };
 
-            inline for (std.meta.fields(ProcTable)) |field| {
-                if (field.type == @FieldType(ProcTable, "lib")) continue;
+            inline for (info.field_names, info.field_types) |field_name, FieldType| {
+                if (FieldType == @FieldType(ProcTable, "lib")) continue;
 
-                @field(procs, field.name) = procs.lib.lookup(std.meta.Child(field.type), field.name);
+                @field(procs, field_name) = procs.lib.lookup(std.meta.Child(FieldType), field_name);
             }
         }
 
@@ -1461,7 +1463,7 @@ const xi = struct {
         }
 
         fn setMask(mask: []u8, event: Event.Type) void {
-            const value: usize = @intCast(@intFromEnum(event));
+            const value: usize = @intCast(@backingInt(event));
             const byte = value / 8;
 
             if (byte >= mask.len) return;
@@ -1471,7 +1473,7 @@ const xi = struct {
 
         fn maskSize(comptime events: []const Event.Type) usize {
             var max: usize = 0;
-            for (events) |event| max = @max(max, @intFromEnum(event));
+            for (events) |event| max = @max(max, @backingInt(event));
             return (max / 8) + 1;
         }
     };
@@ -1486,18 +1488,20 @@ const xi = struct {
         XISelectEvents: ?*const fn (*xlib.Display, window: xlib.Window, masks: [*]Event.Mask, num_masks: c_int) callconv(.c) c_int,
 
         fn load() std.DynLib.Error!void {
+            const info = @typeInfo(ProcTable).@"struct";
+
             procs.lib = std.DynLib.open("libXi.so.6") catch |err| switch (err) {
                 error.FileNotFound => {
                     procs = std.mem.zeroes(ProcTable);
                     return;
                 },
-                else => return err,
+                else => |e| return e,
             };
 
-            inline for (std.meta.fields(ProcTable)) |field| {
-                if (field.type == @FieldType(ProcTable, "lib")) continue;
+            inline for (info.field_names, info.field_types) |field_name, FieldType| {
+                if (FieldType == @FieldType(ProcTable, "lib")) continue;
 
-                @field(procs, field.name) = procs.lib.?.lookup(std.meta.Child(field.type), field.name);
+                @field(procs, field_name) = procs.lib.?.lookup(std.meta.Child(FieldType), field_name);
             }
         }
 

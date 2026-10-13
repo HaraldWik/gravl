@@ -36,7 +36,7 @@ pub fn pick(gpa: std.mem.Allocator, instance: Instance, surface: Surface) PickEr
         const queue_family = for (families, 0..) |family, i| {
             const index: u32 = @truncate(i);
 
-            const graphics_support = family.queue_flags.graphics_bit;
+            const graphics_support = family.queue_flags.graphics;
             const surface_support = try instance.proxy.getPhysicalDeviceSurfaceSupportKHR(physical_device, index, surface.handle) == .true;
 
             if (graphics_support and surface_support) break index;
