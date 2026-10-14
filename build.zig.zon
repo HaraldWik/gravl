@@ -23,9 +23,8 @@
         },
 
         .macosx = .{
-            .path = "../macosx/",
-            // .url = "git+https://github.com/HaraldWik/macosx#59a7f52ce505c41cb6027d11621f85d5327ad844",
-            // .hash = "macosx-0.0.0-XLZD6_6dAQAtEiUD9PraFN7y1jna0HWoKkL9dMc_n9jM",
+            .url = "git+https://github.com/HaraldWik/macosx#9adcc8c448beab3fc910f08a61e6a2d32ecd29f9",
+            .hash = "macosx-0.0.0-XLZD62czAgB_DV547ms2jKwPlcogJ30uv9gOLO4LiTjR",
         },
 
         .vulkan = .{

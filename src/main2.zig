@@ -98,6 +98,9 @@ pub fn main(init: std.process.Init) !void {
     try window.setPointerConstraint(.locked);
     try window.setPointerRelative(true);
 
+    var renderer: Renderer = try .init(gpa, &window);
+    defer renderer.deinit();
+
     const asset_paths: []const [:0]const u8 = &.{
         "assets",
         "../assets",
@@ -166,11 +169,15 @@ pub fn main(init: std.process.Init) !void {
 
         const mv = projection.mul(view);
 
+        if (window.keyboard.isDown(.b)) std.log.info("fps: {d}, dt: {d}", .{ fps, delta_time });
+
         _ = model;
         _ = model2;
         _ = mv;
 
-        if (window.keyboard.isDown(.b)) std.log.info("fps: {d}, dt: {d}", .{ fps, delta_time });
+        const frame: Renderer.Frame = try .begin(&renderer, window.size);
+
+        try frame.end();
     }
 }
 

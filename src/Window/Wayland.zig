@@ -621,7 +621,7 @@ fn keyboardListener(wl_keyboard: *wl.Keyboard, event: wl.Keyboard.Event, self: *
                 _ => unreachable,
             }
 
-            // Enter events report keys already held on focus gain with time = 0.
+            // wl.Keyboard.Event.enter reports keys already held on focus gain with time = 0.
             // Treat them as repeats instead of new key presses.
             if (key.time == 0) keyboard.previous.set(@backingInt(k));
         },

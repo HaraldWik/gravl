@@ -3,8 +3,9 @@ const Metal = @This();
 const std = @import("std");
 const CA = @import("objc").CA;
 const MTL = @import("objc").MTL;
-
 const Window = @import("../Window.zig");
+
+const Renderer = @import("../Renderer.zig");
 
 device: *MTL.Device,
 command_queue: *MTL.CommandQueue,
@@ -46,24 +47,43 @@ pub fn deinit(self: *Metal) void {
     self.* = undefined;
 }
 
-pub const RenderPipeline = *MTL.RenderPipeline;
+pub const Frame = struct {
+    pub fn begin(m: *Metal, size: Window.Size) !Frame {
+        _ = m;
+        _ = size;
 
-pub fn createShaders(m: *Metal, s: []const u8) RenderPipeline {
-    const library = try m.device.newLibraryWithSourceSlice(s, null);
+        return .{};
+    }
 
-    const vertex = try library.newFunctionWithNameSlice("vertex_main");
-    const fragment = try library.newFunctionWithNameSlice("fragment_main");
+    pub fn end(frame: Frame, m: *Metal) !void {
+        _ = frame;
+        _ = m;
+    }
+};
 
-    const pipeline_descriptor: *MTL.RenderPipelineDescriptor = .new();
+pub const GraphicsPipeline = struct {
+    pub fn createShaders(m: *Metal, s: []const u8) *MTL.RenderPipeline {
+        const library = try m.device.newLibraryWithSourceSlice(s, null);
 
-    pipeline_descriptor.setVertexFunction(vertex);
-    pipeline_descriptor.setFragmentFunction(fragment);
+        const vertex = try library.newFunctionWithNameSlice("vertex_main");
+        const fragment = try library.newFunctionWithNameSlice("fragment_main");
 
-    const color_attachment = pipeline_descriptor
-        .colorAttachments()
-        .objectAtIndexedSubscript(0);
+        const pipeline_descriptor: *MTL.RenderPipelineDescriptor = .new();
 
-    color_attachment.setPixelFormat(.bgra8Unorm);
+        pipeline_descriptor.setVertexFunction(vertex);
+        pipeline_descriptor.setFragmentFunction(fragment);
 
-    return m.device.newRenderPipelineState(pipeline_descriptor);
-}
+        const color_attachment = pipeline_descriptor
+            .colorAttachments()
+            .objectAtIndexedSubscript(0);
+
+        color_attachment.setPixelFormat(.bgra8Unorm);
+
+        return m.device.newRenderPipelineState(pipeline_descriptor);
+    }
+
+    pub fn create(m: *Metal, options: Renderer.GraphicsPipeline.Options) GraphicsPipeline {
+        _ = m;
+        _ = options;
+    }
+};
