@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
     const macosx = b.dependency("macosx", .{ .target = target, .optimize = optimize });
 
     const mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = if (target.result.os.tag == .macos) b.path("src/main_macos.zig") else b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{

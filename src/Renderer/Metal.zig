@@ -6,6 +6,9 @@ const MTL = @import("objc").MTL;
 
 const Window = @import("../Window.zig");
 
+device: *MTL.Device,
+command_queue: *MTL.CommandQueue,
+
 pub fn init(gpa: std.mem.Allocator, window: *Window) Metal {
     _ = gpa;
 
@@ -15,29 +18,9 @@ pub fn init(gpa: std.mem.Allocator, window: *Window) Metal {
     metal_layer.setDevice(device);
 
     const command_queue = try device.newCommandQueue();
-    const library = try device.newLibraryWithFileSlice("triangle.metallib");
-
-    const vertex = try library.newFunctionWithNameSlice("vertex_main");
-    const fragment = try library.newFunctionWithNameSlice("fragment_main");
-
-    const pipeline_descriptor: *MTL.RenderPipelineDescriptor = .new();
-
-    pipeline_descriptor.setVertexFunction(vertex);
-    pipeline_descriptor.setFragmentFunction(fragment);
-
-    const color_attachment = pipeline_descriptor
-        .colorAttachments()
-        .objectAtIndexedSubscript(0);
-
-    color_attachment.setPixelFormat(.bgra8Unorm);
-
-    const pipeline = try device.newRenderPipelineState(pipeline_descriptor);
 
     window.inner.view.setWantsLayer(true);
     window.inner.view.setLayer(metal_layer.toLayer());
-
-    _ = pipeline;
-    _ = command_queue;
 
     // const vertex_buffer = try device.newBufferWithBytes(
     //     @ptrCast(&vertices),
@@ -53,9 +36,34 @@ pub fn init(gpa: std.mem.Allocator, window: *Window) Metal {
     // );
     // defer index_buffer.release();
 
-    return .{};
+    return .{
+        .device = device,
+        .command_queue = command_queue,
+    };
 }
 
 pub fn deinit(self: *Metal) void {
     self.* = undefined;
+}
+
+pub const RenderPipeline = *MTL.RenderPipeline;
+
+pub fn createShaders(m: *Metal, s: []const u8) RenderPipeline {
+    const library = try m.device.newLibraryWithSourceSlice(s, null);
+
+    const vertex = try library.newFunctionWithNameSlice("vertex_main");
+    const fragment = try library.newFunctionWithNameSlice("fragment_main");
+
+    const pipeline_descriptor: *MTL.RenderPipelineDescriptor = .new();
+
+    pipeline_descriptor.setVertexFunction(vertex);
+    pipeline_descriptor.setFragmentFunction(fragment);
+
+    const color_attachment = pipeline_descriptor
+        .colorAttachments()
+        .objectAtIndexedSubscript(0);
+
+    color_attachment.setPixelFormat(.bgra8Unorm);
+
+    return m.device.newRenderPipelineState(pipeline_descriptor);
 }

@@ -20,6 +20,19 @@ pub fn init(gpa: std.mem.Allocator, window: *Window) !Renderer {
     return .{ .inner = inner };
 }
 
-pub fn deinit(self: *Renderer) void {
-    self.inner.deinit();
+pub fn deinit(r: *Renderer) void {
+    r.inner.deinit();
 }
+
+pub const Shader = struct {
+    handle: Handle,
+
+    pub const Handle = switch (InnerType) {
+        Vulkan => *anyopaque,
+        Metal => Metal.RenderPipeline,
+    };
+
+    pub fn initFromSlice(r: *Renderer, s: []const u8) Shader {
+        return .{ .handle = r.inner.createShaders(s) };
+    }
+};

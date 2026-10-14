@@ -4,7 +4,7 @@ const std = @import("std");
 const DynLib = @import("DynLib.zig");
 const Game = @import("Game.zig");
 const Window = @import("Window.zig");
-const Renderer = @import("Renderer/Vulkan.zig"); // TMP
+const Renderer = @import("Renderer.zig");
 const m = @import("math.zig");
 const loader = @import("loader.zig");
 

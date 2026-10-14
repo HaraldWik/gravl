@@ -517,18 +517,18 @@ pub const Frame = struct {
         device.proxy.cmdSetLogicOpEnableEXT(command_buffer, .false);
     }
 
-    pub const PolygonMode = union(vk.PolygonMode) {
-        fill,
+    pub const PolygonMode = union {
+        fill: void,
         line: struct {
             width: f32 = 1.0,
         },
-        point,
-        fill_rectangle_nv,
+        point: void,
+        fill_rectangle_nv: void,
     };
 
     pub fn setPolygonMode(self: Frame, mode: PolygonMode) void {
-        const mode_enum = std.meta.activeTag(mode);
-        self.device.proxy.cmdSetPolygonModeEXT(self.command_buffer, mode_enum);
+        const mode_tag = std.meta.activeTag(mode);
+        self.device.proxy.cmdSetPolygonModeEXT(self.command_buffer, mode_tag);
 
         switch (mode) {
             .line => |line| self.device.proxy.cmdSetLineWidth(self.command_buffer, line.width),
