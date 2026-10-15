@@ -404,7 +404,7 @@ pub fn setTitle(self: *Xlib, _: *Window, title: [:0]const u8) !void {
     _ = xlib.procs.XFlush.?(display);
 }
 
-pub fn setMaxSize(self: *Xlib, window: *Window, _: ?Window.Size) !void {
+pub fn setMaxSize(self: *Xlib, window: *Window, _: ?Window.Size) void {
     var hints = std.mem.zeroes(xlib.SizeHints);
 
     if (window.max_size) |size| {

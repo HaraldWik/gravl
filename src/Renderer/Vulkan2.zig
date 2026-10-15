@@ -166,20 +166,232 @@ pub fn resize(v: *Vulkan, size: Window.Size) !void {
 }
 
 pub const Frame = struct {
+    renderer: *Vulkan,
     image: vk.Image,
     command_buffer: vk.CommandBuffer,
 
-    pub fn begin(v: *Vulkan, size: Window.Size) !Frame {
-        try v.resize(size);
+    pub fn begin(v: *Vulkan, options: Renderer.Frame.BeginOptions) !Frame {
+        try v.resize(options.size);
 
-        return .{};
+        const frame = v.command_handler.frames[v.command_handler.frame_index % CommandHandler.frames_in_flight];
+
+        _ = try v.device.proxy.waitForFences(
+            &.{frame.in_flight_fence},
+            .true,
+            std.math.maxInt(u64),
+        );
+
+        try v.device.proxy.resetFences(&.{frame.in_flight_fence});
+
+        v.swapchain.drain(
+            v.gpa,
+            v.device,
+            v.command_handler.frame_index,
+        );
+
+        const result = v.device.wrapper.dispatch.vkAcquireNextImageKHR.?(
+            v.device.handle,
+            v.swapchain.handle,
+            std.math.maxInt(u64),
+            frame.image_available,
+            .null_handle,
+            &v.swapchain.image_index,
+        );
+
+        if (result == .error_out_of_date_khr or result == .suboptimal_khr) {
+            try v.resize(options.size); // TODO window size
+            return error.SwapchainOutOfDate;
+        }
+
+        const image = v.swapchain.images[v.swapchain.image_index];
+
+        // var barrier: vk.ImageMemoryBarrier2 = .{
+        //     .srcStageMask = .{ .top_of_pipe = true },
+        //     .srcAccessMask = .{},
+        //     .dstStageMask = .{ .color_attachment_output = true },
+        //     .dstAccessMask = .{ .color_attachment_write = true },
+        //     .oldLayout = .undefined,
+        //     .newLayout = .color_attachment_optimal,
+        //     .image = image,
+        //     .subresourceRange = .{
+        //         .aspectMask = .{ .color = true },
+        //         .baseMipLevel = 0,
+        //         .levelCount = 1,
+        //         .baseArrayLayer = 0,
+        //         .layerCount = 1,
+        //     },
+        // };
+
+        // const dependency: *const vk.DependencyInfo = &.{
+        //     .imageMemoryBarrierCount = 1,
+        //     .pImageMemoryBarriers = &barrier,
+        // };
+
+        // device.proxy.cmdPipelineBarrier2(frame.command_buffer, dependency);
+
+        try v.device.proxy.resetCommandBuffer(
+            frame.command_buffer,
+            .{},
+        );
+
+        try v.device.proxy.beginCommandBuffer(
+            frame.command_buffer,
+            &.{},
+        );
+
+        const color_barrier = vk.ImageMemoryBarrier{
+            .src_access_mask = .{},
+            .dst_access_mask = .{
+                .color_attachment_write = true,
+            },
+            .old_layout = .undefined,
+            .new_layout = .color_attachment_optimal,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .image = image,
+            .subresource_range = .{
+                .aspect_mask = .{
+                    .color = true,
+                },
+                .base_mip_level = 0,
+                .level_count = 1,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+        };
+
+        v.device.proxy.cmdPipelineBarrier(
+            frame.command_buffer,
+            .{ .top_of_pipe = true },
+            .{ .color_attachment_output = true },
+            .{},
+            null,
+            null,
+            &.{color_barrier},
+        );
+
+        v.device.proxy.cmdSetViewportWithCount(
+            frame.command_buffer,
+            &.{.{
+                .x = 0,
+                .y = 0,
+                .width = @floatFromInt(v.swapchain.extent.width),
+                .height = @floatFromInt(v.swapchain.extent.height),
+                .min_depth = 0,
+                .max_depth = 1,
+            }},
+        );
+
+        v.device.proxy.cmdSetScissorWithCount(
+            frame.command_buffer,
+            &.{.{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = v.swapchain.extent,
+            }},
+        );
+
+        const clear_color: vk.ClearValue = .{
+            .color = .{
+                .float_32 = options.clear_color,
+            },
+        };
+
+        const clear_depth: vk.ClearValue = .{
+            .depth_stencil = .{
+                .depth = 1.0,
+                .stencil = 0,
+            },
+        };
+
+        const color_attachment: *const vk.RenderingAttachmentInfo = &.{
+            .image_view = v.swapchain.image_views[v.swapchain.image_index],
+            .image_layout = .color_attachment_optimal,
+            .load_op = .clear,
+            .store_op = .store,
+            .clear_value = clear_color,
+            .resolve_mode = .{},
+            .resolve_image_layout = .undefined,
+        };
+
+        const depth_attachment: *const vk.RenderingAttachmentInfo = &.{
+            .image_view = v.swapchain.depth.image_view,
+            .image_layout = .depth_attachment_optimal,
+            .load_op = .clear,
+            .store_op = .store,
+            .clear_value = clear_depth,
+            .resolve_mode = .{},
+            .resolve_image_layout = .undefined,
+        };
+
+        const rendering_info: *const vk.RenderingInfo = &.{
+            .render_area = .{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = v.swapchain.extent,
+            },
+            .layer_count = 1,
+            .color_attachment_count = 1,
+            .p_color_attachments = @ptrCast(color_attachment),
+            .p_depth_attachment = depth_attachment,
+            .view_mask = 0,
+        };
+
+        v.device.proxy.cmdBeginRendering(
+            frame.command_buffer,
+            rendering_info,
+        );
+
+        v.device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .vertex = true }}, null);
+        v.device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_control = true }}, null);
+        v.device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .tessellation_evaluation = true }}, null);
+        v.device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .geometry = true }}, null);
+        v.device.proxy.cmdBindShadersEXT(frame.command_buffer, &.{.{ .fragment = true }}, null);
+
+        return .{
+            .renderer = v,
+            .image = image,
+            .command_buffer = frame.command_buffer,
+        };
     }
 
-    pub fn end(frame: Frame, v: *Vulkan) !void {
-        const device = v.device;
-        const swapchain = v.swapchain;
-        const frame_data = v.command_handler.frames[v.command_handler.frame_index % CommandHandler.frames_in_flight];
+    pub fn end(frame: Frame) !void {
+        const device = frame.renderer.device;
+        const swapchain = frame.renderer.swapchain;
+        const frame_data = frame.renderer.command_handler.frames[frame.renderer.command_handler.frame_index % CommandHandler.frames_in_flight];
 
+        // submit
+
+        device.proxy.cmdEndRendering(frame.command_buffer);
+
+        const color_to_present: vk.ImageMemoryBarrier = .{
+            .src_access_mask = .{ .color_attachment_write = true },
+            .dst_access_mask = .{},
+            .old_layout = .color_attachment_optimal,
+            .new_layout = .present_src_khr,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .image = frame.image,
+            .subresource_range = .{
+                .aspect_mask = .{ .color = true },
+                .base_mip_level = 0,
+                .level_count = 1,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+        };
+
+        device.proxy.cmdPipelineBarrier(
+            frame.command_buffer,
+            .{ .color_attachment_output = true },
+            .{},
+            .{},
+            null,
+            null,
+            &.{color_to_present},
+        );
+
+        try device.proxy.endCommandBuffer(frame.command_buffer);
+
+        // present
         const wait_semaphores: []const vk.Semaphore = &.{
             frame_data.image_available,
         };
@@ -217,14 +429,25 @@ pub const Frame = struct {
             else => return err,
         };
 
-        v.command_handler.frame_index += 1;
+        frame.renderer.command_handler.frame_index += 1;
+    }
+
+    pub fn bindPipeline(frame: Frame, pipeline: GraphicsPipeline) void {
+        _ = frame;
+        _ = pipeline;
+    }
+
+    pub fn drawMesh(frame: Frame, mesh: Mesh) void {
+        _ = frame;
+        _ = mesh;
     }
 };
 
 pub const GraphicsPipeline = struct {
-    pub fn init(v: *Vulkan, options: Renderer.GraphicsPipeline.Options) GraphicsPipeline {
+    pub fn init(v: *Vulkan, options: Renderer.GraphicsPipeline.CreateOptions) !GraphicsPipeline {
         _ = v;
         _ = options;
+        return .{};
     }
 
     pub fn deinit(pipeline: GraphicsPipeline, v: *Vulkan) void {

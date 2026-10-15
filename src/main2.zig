@@ -149,7 +149,12 @@ pub fn main(init: std.process.Init) !void {
     var pointer_captured: bool = true;
 
     while (!window.should_close) {
-        try window.poll(.{});
+        var buf: [128]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(&buf);
+        try window.poll(.{ .text = &writer });
+        std.debug.print("{s}", .{writer.buffered()});
+        _ = writer.consumeAll();
+
         _ = try io.sleep(.fromMilliseconds(8), .awake);
 
         const delta_time = getDeltaTime(io);
@@ -199,7 +204,10 @@ pub fn main(init: std.process.Init) !void {
         _ = model2;
         _ = mv;
 
-        const frame = Renderer.Frame.begin(&renderer, window.size) catch |err| switch (err) {
+        const frame = Renderer.Frame.begin(&renderer, .{
+            .size = window.size,
+            .clear_color = .{ 0.8, 0.7, 0.2, 1.0 },
+        }) catch |err| switch (err) {
             error.NoDrawable => continue,
             else => |e| return e,
         };

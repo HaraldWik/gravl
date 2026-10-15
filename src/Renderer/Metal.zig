@@ -40,12 +40,12 @@ pub const Frame = struct {
     command_buffer: *MTL.CommandBuffer,
     encoder: *MTL.RenderCommandEncoder,
 
-    pub fn begin(m: *Metal, size: Window.Size) Renderer.Frame.BeginError!Frame {
+    pub fn begin(m: *Metal, options: Renderer.Frame.BeginOptions) Renderer.Frame.BeginError!Frame {
         const drawable = m.metal_layer.nextDrawable() orelse return error.NoDrawable;
 
         m.metal_layer.setDrawableSize(.{
-            .width = @floatFromInt(size.width),
-            .height = @floatFromInt(size.height),
+            .width = @floatFromInt(options.size.width),
+            .height = @floatFromInt(options.size.height),
         });
 
         const command_buffer = m.command_queue.commandBuffer() orelse return error.CommandBufferUnavailable;

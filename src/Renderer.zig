@@ -27,13 +27,18 @@ pub fn deinit(r: *Renderer) void {
 pub const Frame = struct {
     inner: InnerType.Frame,
 
+    pub const BeginOptions = struct {
+        size: Window.Size,
+        clear_color: [4]f32 = .{ 0.0, 0.0, 0.0, 1.0 },
+    };
+
     pub const BeginError = error{
         NoDrawable,
         CommandBufferUnavailable,
     };
 
-    pub fn begin(r: *Renderer, size: Window.Size) BeginError!Frame {
-        return .{ .inner = try .begin(&r.inner, size) };
+    pub fn begin(r: *Renderer, options: BeginOptions) if (InnerType == Metal) BeginError!Frame else anyerror!Frame {
+        return .{ .inner = try .begin(&r.inner, options) };
     }
 
     pub fn end(frame: Frame) !void {
