@@ -80,6 +80,7 @@ pub fn build(b: *std.Build) void {
         },
         .macos => {
             mod.linkFramework("Cocoa", .{});
+            mod.linkFramework("Metal", .{});
         },
         else => {},
     }

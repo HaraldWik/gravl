@@ -10,6 +10,23 @@ const loader = @import("loader.zig");
 
 const gravl = @import("real_engine");
 
+const Vertex = extern struct {
+    position: [3]f32,
+    color: [3]f32,
+};
+
+pub const triangle = struct {
+    const vertices: []const Vertex = &.{
+        .{ .position = .{ 0.0, 0.5, 0.0 }, .color = .{ 1, 0, 0 } },
+        .{ .position = .{ -0.5, -0.5, 0.0 }, .color = .{ 0, 1, 0 } },
+        .{ .position = .{ 0.5, -0.5, 0.0 }, .color = .{ 0, 0, 1 } },
+    };
+
+    const indices: []const u32 = &.{
+        0, 1, 2,
+    };
+};
+
 pub const cube = struct {
     const vertices: []const Vertex = &.{
         // Front face (z = -0.5)
@@ -38,11 +55,6 @@ pub const cube = struct {
         6, 7, 3,
         0, 4, 5,
         5, 1, 0,
-    };
-
-    const Vertex = extern struct {
-        position: [3]f32,
-        color: [3]f32,
     };
 };
 
@@ -92,7 +104,7 @@ pub fn main(init: std.process.Init) !void {
         },
     });
     defer window.close();
-    try window.setMaxSize(.{ .width = 1200, .height = 675 });
+    try window.setMinSize(.{ .width = 480, .height = 270 });
 
     try window.setPointerVisible(false);
     try window.setPointerConstraint(.locked);
@@ -100,6 +112,18 @@ pub fn main(init: std.process.Init) !void {
 
     var renderer: Renderer = try .init(gpa, &window);
     defer renderer.deinit();
+
+    const graphics_pipeline: Renderer.GraphicsPipeline = try .init(&renderer, .{
+        .shaders = .{ .combined = .{
+            .source = @embedFile("shaders/triangle.metallib"),
+            .vertex = "vertex_main",
+            .fragment = "fragment_main",
+        } },
+    });
+    defer graphics_pipeline.deinit(&renderer);
+
+    const mesh: Renderer.Mesh = try .init(&renderer, Vertex, triangle.vertices, triangle.indices);
+    defer mesh.deinit(&renderer);
 
     const asset_paths: []const [:0]const u8 = &.{
         "assets",
@@ -175,7 +199,13 @@ pub fn main(init: std.process.Init) !void {
         _ = model2;
         _ = mv;
 
-        const frame: Renderer.Frame = try .begin(&renderer, window.size);
+        const frame = Renderer.Frame.begin(&renderer, window.size) catch |err| switch (err) {
+            error.NoDrawable => continue,
+            else => |e| return e,
+        };
+
+        frame.bindPipeline(graphics_pipeline);
+        frame.drawMesh(mesh);
 
         try frame.end();
     }

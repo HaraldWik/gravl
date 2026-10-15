@@ -222,8 +222,37 @@ pub const Frame = struct {
 };
 
 pub const GraphicsPipeline = struct {
-    pub fn create(v: *Vulkan, options: Renderer.GraphicsPipeline.Options) GraphicsPipeline {
+    pub fn init(v: *Vulkan, options: Renderer.GraphicsPipeline.Options) GraphicsPipeline {
         _ = v;
         _ = options;
+    }
+
+    pub fn deinit(pipeline: GraphicsPipeline, v: *Vulkan) void {
+        _ = pipeline;
+        _ = v;
+    }
+
+    pub fn bindPipeline(frame: Frame, pipeline: GraphicsPipeline) void {
+        _ = frame;
+        _ = pipeline;
+    }
+
+    pub fn drawMesh(frame: Frame, mesh: Mesh) void {
+        _ = frame;
+        _ = mesh;
+    }
+};
+
+pub const Mesh = struct {
+    pub fn init(v: *Vulkan, comptime Vertex: type, vertices: []const Vertex, indices: []const u32) !Mesh {
+        _ = v;
+        _ = vertices;
+        _ = indices;
+        return .{};
+    }
+
+    pub fn deinit(mesh: Mesh, v: *Vulkan) void {
+        _ = mesh;
+        _ = v;
     }
 };

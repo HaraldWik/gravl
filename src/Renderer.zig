@@ -25,57 +25,102 @@ pub fn deinit(r: *Renderer) void {
 }
 
 pub const Frame = struct {
-    renderer: *Renderer,
     inner: InnerType.Frame,
 
-    pub fn begin(r: *Renderer, size: Window.Size) !Frame {
-        return .{
-            .renderer = r,
-            .inner = try .begin(&r.inner, size),
-        };
+    pub const BeginError = error{
+        NoDrawable,
+        CommandBufferUnavailable,
+    };
+
+    pub fn begin(r: *Renderer, size: Window.Size) BeginError!Frame {
+        return .{ .inner = try .begin(&r.inner, size) };
     }
 
     pub fn end(frame: Frame) !void {
-        try frame.inner.end(frame.renderer.inner);
+        try frame.inner.end();
+    }
+
+    pub fn bindPipeline(frame: Frame, pipeline: GraphicsPipeline) void {
+        frame.inner.bindPipeline(pipeline.inner);
+    }
+
+    pub fn drawMesh(frame: Frame, mesh: Mesh) void {
+        frame.inner.drawMesh(mesh.inner);
     }
 };
 
 pub const GraphicsPipeline = struct {
     inner: InnerType.GraphicsPipeline,
 
-    pub const Options = struct {
-        vertex_shader: Shader,
-        fragment_shader: ?Shader = null,
+    pub const PrimitiveTopology = enum {
+        point_list,
+        line_list,
+        line_strip,
+        triangle_list,
+        triangle_strip,
+        patch_list,
+    };
 
-        tessellation: ?Tessellation = null,
+    pub const CreateOptions = struct {
+        shaders: ShaderSource,
 
         primitive_topology: PrimitiveTopology = .triangle_list,
 
+        pub const ShaderSource = union(enum) {
+            separate: SeparateShaders,
+            combined: CombinedShader,
+
+            pub const SeparateShaders = struct {
+                vertex: Shader,
+                fragment: ?Shader = null,
+                tessellation: ?Tessellation = null,
+
+                pub const Tessellation = struct {
+                    control: Shader,
+                    evaluation: Shader,
+                    patch_control_points: u32,
+                };
+            };
+
+            pub const CombinedShader = struct {
+                source: [:0]const u8,
+                /// Name of the vertex shader entry point.
+                vertex: [:0]const u8 = "vertex_main",
+                /// Name of the fragment shader entry point, or `null` if absent.
+                fragment: ?[:0]const u8 = null,
+                tessellation: ?Tessellation = null,
+
+                pub const Tessellation = struct {
+                    control: [:0]const u8,
+                    evaluation: [:0]const u8,
+                    patch_control_points: u32,
+                };
+            };
+        };
+
         pub const Shader = struct {
-            source: []const u8,
-            entry_name: []const u8 = "main",
-        };
-
-        pub const Tessellation = struct {
-            control_shader: Shader,
-            evaluation_shader: Shader,
-            patch_control_points: u32,
-        };
-
-        pub const PrimitiveTopology = enum {
-            point_list,
-            line_list,
-            line_strip,
-            triangle_list,
-            triangle_strip,
-            patch_list,
+            source: [:0]const u8,
+            entry: [:0]const u8 = "main",
         };
     };
 
-    pub fn create(r: *Renderer, options: Options) !GraphicsPipeline {
-        _ = r;
-        _ = options;
-        // ...
+    pub fn init(r: *Renderer, options: CreateOptions) !GraphicsPipeline {
+        return .{ .inner = try .init(&r.inner, options) };
+    }
 
+    pub fn deinit(pipeline: GraphicsPipeline, r: *Renderer) void {
+        pipeline.inner.deinit(&r.inner);
+    }
+};
+
+pub const Mesh = struct {
+    inner: InnerType.Mesh,
+
+    pub fn init(r: *Renderer, comptime Vertex: type, vertices: []const Vertex, indices: []const u32) !Mesh {
+        return .{ .inner = try .init(&r.inner, Vertex, vertices, indices) };
+    }
+
+    pub fn deinit(mesh: Mesh, r: *Renderer) void {
+        mesh.inner.deinit(&r.inner);
     }
 };

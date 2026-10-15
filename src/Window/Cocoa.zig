@@ -265,7 +265,7 @@ pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
     const metal_layer: *CA.MetalLayer = .new();
 
     view.setWantsLayer(true);
-    view.setLayer(metal_layer.toLayer());
+    view.setLayer(metal_layer.super());
 
     self.* = .{
         .app = app,
