@@ -73,6 +73,7 @@ fn initWin32(gpa: std.mem.Allocator, instance: Instance, win32: *Win32) Win32Err
     return .{ .handle = handle };
 }
 
+// There is no shader object support in MoltenVK
 fn initCocoa(gpa: std.mem.Allocator, instance: Instance, cocoa: *Cocoa) CocoaError!Surface {
     const create_info: *const vk.MetalSurfaceCreateInfoEXT = &.{
         .p_layer = @ptrCast(cocoa.metal_layer),

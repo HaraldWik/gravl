@@ -133,6 +133,11 @@ pub const Pointer = struct {
         extra1: bool = false,
         extra2: bool = false,
         extra3: bool = false,
+
+        pub fn anyDown(b: Buttons) bool {
+            const i: @typeInfo(Buttons).@"struct".backing_integer.? = @bitCast(b);
+            return i > 0;
+        }
     };
 
     /// Horizontal and vertical scroll

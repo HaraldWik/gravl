@@ -20,16 +20,6 @@ const View = struct {
         );
 
         try cls.addMethod(.registerName("acceptsFirstResponder"), acceptsFirstResponder);
-        try cls.addMethod(.registerName("keyDown:"), keyDown);
-        try cls.addMethod(.registerName("keyUp:"), keyUp);
-        try cls.addMethod(.registerName("flagsChanged:"), flagsChanged);
-        try cls.addMethod(.registerName("mouseDown:"), mouseDown);
-        try cls.addMethod(.registerName("mouseUp:"), mouseUp);
-        try cls.addMethod(.registerName("rightMouseDown:"), rightMouseDown);
-        try cls.addMethod(.registerName("rightMouseUp:"), rightMouseUp);
-        try cls.addMethod(.registerName("mouseMoved:"), mouseMoved);
-        try cls.addMethod(.registerName("mouseDragged:"), mouseDragged);
-        try cls.addMethod(.registerName("scrollWheel:"), scrollWheel);
 
         cls.registerPair();
 
@@ -39,171 +29,11 @@ const View = struct {
     fn acceptsFirstResponder(_: *c.Object, _: *c.SEL) callconv(.c) bool {
         return true;
     }
-
-    fn keyDown(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
-        const key_code = c.msgSend(
-            u16,
-            event,
-            "keyCode",
-            .{},
-        );
-
-        const characters = c.msgSend(
-            *NS.String,
-            event,
-            "characters",
-            .{},
-        );
-
-        std.debug.print(
-            "keyDown: keyCode={d}, utf8={s}\n",
-            .{ key_code, characters.utf8() },
-        );
-    }
-
-    fn keyUp(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
-        const key_code = c.msgSend(
-            u16,
-            event,
-            "keyCode",
-            .{},
-        );
-
-        std.debug.print(
-            "keyUp: keyCode={}\n",
-            .{key_code},
-        );
-    }
-
-    fn flagsChanged(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
-        const key_code = c.msgSend(
-            u16,
-            event,
-            "keyCode",
-            .{},
-        );
-
-        const modifiers = c.msgSend(
-            usize,
-            event,
-            "modifierFlags",
-            .{},
-        );
-
-        std.debug.print(
-            "flagsChanged: keyCode={} modifiers={}\n",
-            .{ key_code, modifiers },
-        );
-    }
-
-    fn mouseDown(_: *c.Object, _: *c.SEL, _: *NS.Event) callconv(.c) void {
-        std.debug.print("mouseDown\n", .{});
-    }
-
-    fn mouseUp(_: *c.Object, _: *c.SEL, _: *NS.Event) callconv(.c) void {
-        std.debug.print("mouseUp\n", .{});
-    }
-
-    fn rightMouseDown(_: *c.Object, _: *c.SEL, _: *NS.Event) callconv(.c) void {
-        std.debug.print("rightMouseDown\n", .{});
-    }
-
-    fn rightMouseUp(_: *c.Object, _: *c.SEL, _: *NS.Event) callconv(.c) void {
-        std.debug.print("rightMouseUp\n", .{});
-    }
-
-    fn mouseMoved(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
-        const location = c.msgSend(
-            NS.Point,
-            event,
-            "locationInWindow",
-            .{},
-        );
-
-        const dx = c.msgSend(
-            f64,
-            event,
-            "deltaX",
-            .{},
-        );
-
-        const dy = c.msgSend(
-            f64,
-            event,
-            "deltaY",
-            .{},
-        );
-
-        std.debug.print(
-            "mouseMoved: x={d} y={d} dx={d} dy={d}\n",
-            .{
-                location.x,
-                location.y,
-                dx,
-                dy,
-            },
-        );
-    }
-
-    fn mouseDragged(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
-        const location = c.msgSend(
-            NS.Point,
-            event,
-            "locationInWindow",
-            .{},
-        );
-
-        const dx = c.msgSend(
-            f64,
-            event,
-            "deltaX",
-            .{},
-        );
-
-        const dy = c.msgSend(
-            f64,
-            event,
-            "deltaY",
-            .{},
-        );
-
-        std.debug.print(
-            "mouseDragged: x={d} y={d} dx={d} dy={d}\n",
-            .{
-                location.x,
-                location.y,
-                dx,
-                dy,
-            },
-        );
-    }
-
-    fn scrollWheel(_: *c.Object, _: *c.SEL, event: *NS.Event) callconv(.c) void {
-        const dx = c.msgSend(
-            f64,
-            event,
-            "scrollingDeltaX",
-            .{},
-        );
-
-        const dy = c.msgSend(
-            f64,
-            event,
-            "scrollingDeltaY",
-            .{},
-        );
-
-        std.debug.print(
-            "scrollWheel: dx={d} dy={d}\n",
-            .{ dx, dy },
-        );
-    }
 };
 
 app: *NS.Application,
 window: *NS.Window,
 view: *NS.View,
-metal_layer: *CA.MetalLayer,
 
 pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
     const app: *NS.Application = .shared();
@@ -262,16 +92,10 @@ pub fn open(self: *Cocoa, window: *Window, options: Window.OpenOptions) !void {
 
     app.activateIgnoringOtherApps(true);
 
-    const metal_layer: *CA.MetalLayer = .new();
-
-    view.setWantsLayer(true);
-    view.setLayer(metal_layer.super());
-
     self.* = .{
         .app = app,
         .window = ns_window,
         .view = view,
-        .metal_layer = metal_layer,
     };
 }
 
@@ -279,10 +103,83 @@ pub fn close(self: *Cocoa, _: *Window) void {
     _ = self;
 }
 
-pub fn poll(self: *Cocoa, _: *Window, options: Window.PollOptions) !void {
-    _ = options;
-
+pub fn poll(self: *Cocoa, window: *Window, options: Window.PollOptions) !void {
+    const pointer = &window.pointer;
     while (self.app.nextEventMatchingMask(.any, .distantPast(), NS.RunLoop.default.*, true)) |event| {
+        switch (event.type()) {
+            .left_mouse_down => pointer.buttons.left = true,
+            .left_mouse_up => pointer.buttons.left = false,
+            .right_mouse_down => pointer.buttons.right = true,
+            .right_mouse_up => pointer.buttons.right = false,
+            .other_mouse_down, .other_mouse_up => {
+                const button = event.buttonNumber();
+                const state = event.type() == .other_mouse_down;
+
+                switch (button) {
+                    2 => pointer.buttons.middle = state,
+                    3 => pointer.buttons.back = state,
+                    4 => pointer.buttons.forward = state,
+                    5 => pointer.buttons.extra1 = state,
+                    6 => pointer.buttons.extra2 = state,
+                    7 => pointer.buttons.extra3 = state,
+                    else => {},
+                }
+            },
+            .mouse_moved => {
+                const delta_x = event.deltaX();
+                const delta_y = event.deltaY();
+
+                pointer.movement = .{ .position = .{ .x = delta_x, .y = delta_y } };
+            },
+
+            .key_down, .key_up => {
+                const characters = std.mem.span(c.msgSend(
+                    *NS.String,
+                    event,
+                    "characters",
+                    .{},
+                ).utf8());
+
+                if (options.text) |text| try text.writeAll(characters);
+
+                const key = std.meta.stringToEnum(Window.Keyboard.Key, characters) orelse {
+                    std.log.warn("unknown key: {any}", .{characters});
+                    continue;
+                };
+
+                switch (event.type()) {
+                    .key_down => window.keyboard.press(key),
+                    .key_up => window.keyboard.release(key),
+                    else => unreachable,
+                }
+                // const key_code = c.msgSend(
+                //     u16,
+                //     event,
+                //     "keyCode",
+                //     .{},
+                // );
+
+            },
+            .flags_changed => {
+                const ModifierFlags = packed struct(u64) {
+                    caps_lock: bool = false,
+                    shift: bool = false,
+                    control: bool = false,
+                    option: bool = false,
+                    command: bool = false,
+                    numeric_pad: bool = false,
+                    help: bool = false,
+                    function: bool = false,
+                    _pad0: u56 = 0,
+                };
+
+                const flags = c.msgSend(ModifierFlags, event, "modifierFlags", .{});
+
+                std.log.info("{any}", .{flags});
+            },
+
+            else => {},
+        }
         self.app.sendEvent(event);
     }
 }
@@ -312,12 +209,15 @@ pub fn minimize(self: *Cocoa, _: *Window) !void {
 }
 
 pub fn maximize(self: *Cocoa, _: *Window) !void {
-    c.msgSend(void, self.window, .registerName("performZoom:"), .{@as(?*anyopaque, null)});
+    c.msgSend(void, self.window, .registerName("performZoom:"), .{null});
 }
 
-pub fn restore(self: *Cocoa, window: *Window) !void {
-    _ = self;
-    _ = window;
+pub fn restore(self: *Cocoa, _: *Window) !void {
+    if (self.window.isMiniaturized()) {
+        self.window.deminiaturize(null);
+    } else if (self.window.isZoomed()) {
+        self.window.zoom(null);
+    }
 }
 
 pub fn setFullscreen(self: *Cocoa, _: *Window, enabled: bool) !void {

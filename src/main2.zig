@@ -58,8 +58,6 @@ pub const cube = struct {
     };
 };
 
-const DefaultMesh = Renderer.Mesh(&.{loader.Obj.Vertex}, u32);
-
 const PushConstants = extern struct {
     mvp: m.Matrix4 = .identity,
 };

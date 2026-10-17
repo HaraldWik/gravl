@@ -60,6 +60,13 @@ pub const Frame = struct {
         attachment.setLoadAction(.clear);
         attachment.setStoreAction(.store);
 
+        attachment.setClearColor(.{
+            .red = options.clear_color[0],
+            .green = options.clear_color[1],
+            .blue = options.clear_color[2],
+            .alpha = options.clear_color[3],
+        });
+
         const encoder = command_buffer.renderCommandEncoder(render_pass);
 
         return .{
