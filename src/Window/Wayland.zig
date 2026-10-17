@@ -176,9 +176,7 @@ pub fn open(self: *Wayland, window: *Window, options: Window.OpenOptions) !void 
     };
 }
 
-pub fn close(self: *Wayland, window: *Window) void {
-    _ = window;
-
+pub fn close(self: *Wayland, _: *Window) void {
     if (self.cursor_shape_device) |cursor_shape_device| cursor_shape_device.destroy();
     if (self.pointer) |pointer| pointer.destroy();
     if (self.keyboard) |keyboard| keyboard.destroy();
@@ -196,7 +194,6 @@ pub fn close(self: *Wayland, window: *Window) void {
         .confined => |constraint| if (constraint) |confined| confined.destroy(),
         .locked => |constraint| if (constraint) |locked| locked.destroy(),
     }
-    if (self.cursor_shape_device) |cursor_shape_device| cursor_shape_device.destroy();
     if (self.toplevel_decoration) |toplevel_decoration| toplevel_decoration.destroy();
     self.toplevel.destroy();
     self.xdg_surface.destroy();
@@ -215,14 +212,20 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
     self.poll_options = &options;
 
     while (display.prepareRead() == false) {
-        if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
+        while (true) switch (display.dispatchPending()) {
+            .SUCCESS => break,
+            .AGAIN, .INTR => continue,
+            .PIPE => return error.CompositorDisconnected,
+            else => unreachable,
+        };
     }
 
-    switch (display.flush()) {
-        .SUCCESS, .AGAIN, .INTR => {},
+    while (true) switch (display.flush()) {
+        .SUCCESS => break,
+        .AGAIN, .INTR => continue,
         .PIPE => return error.CompositorDisconnected,
-        else => return error.Flush,
-    }
+        else => unreachable,
+    };
 
     var pfd: std.posix.pollfd = .{
         .fd = @intCast(display.getFd()),
@@ -236,7 +239,12 @@ pub fn poll(self: *Wayland, window: *Window, options: Window.PollOptions) !void 
         display.cancelRead();
     }
 
-    if (display.dispatchPending() != .SUCCESS) return error.DispatchPending;
+    while (true) switch (display.dispatchPending()) {
+        .SUCCESS => break,
+        .AGAIN, .INTR => continue,
+        .PIPE => return error.CompositorDisconnected,
+        else => unreachable,
+    };
 
     if (self.xkb.err) |err| return err;
 
@@ -317,9 +325,7 @@ pub fn setPointerVisible(self: *Wayland, _: *Window, visible: bool) !void {
     self.cursor_shape_device.?.setShape(serial, .default);
 }
 
-pub fn setPointerConstraint(self: *Wayland, window: *Window, constraint: Window.Pointer.Constraint) !void {
-    _ = window;
-
+pub fn setPointerConstraint(self: *Wayland, _: *Window, constraint: Window.Pointer.Constraint) !void {
     const pointer = self.pointer orelse return;
     const pointer_constraints = self.pointer_constraints orelse return;
 
