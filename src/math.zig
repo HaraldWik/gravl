@@ -147,6 +147,10 @@ pub const Quaternion = packed struct {
             0,                       0,                       0,                       1,
         } };
     }
+
+    pub fn format(q: Quaternion, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("(w={d:.4}, x={d:.4}, y={d:.4}, z={d:.4})", .{ q.w, q.x, q.y, q.z });
+    }
 };
 
 pub const Matrix4 = extern struct {

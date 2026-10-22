@@ -194,13 +194,11 @@ pub fn main(init: std.process.Init) !void {
         const view = camera.viewMatrix();
         const projection: m.Matrix4 = .perspectiveFovLh(std.math.degreesToRadians(90.0), window.size.aspect(), 0.01, 100.0);
 
-        const mv = projection.mul(view);
+        const vp = projection.mul(view);
 
         if (window.keyboard.isDown(.b)) std.log.info("fps: {d}, dt: {d}", .{ fps, delta_time });
 
-        _ = model;
         _ = model2;
-        _ = mv;
 
         const frame = Renderer.Frame.begin(&renderer, .{
             .size = window.size,
@@ -211,6 +209,17 @@ pub fn main(init: std.process.Init) !void {
         };
 
         frame.bindPipeline(graphics_pipeline);
+
+        const Uniforms = extern struct {
+            model: [4 * 4]f32 align(16),
+            vp: [4 * 4]f32 align(16),
+        };
+
+        frame.bindUniforms(Uniforms, .{
+            .model = model.inner,
+            .vp = vp.inner,
+        });
+
         frame.drawMesh(mesh);
 
         try frame.end();

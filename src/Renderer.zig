@@ -37,7 +37,7 @@ pub const Frame = struct {
         CommandBufferUnavailable,
     };
 
-    pub fn begin(r: *Renderer, options: BeginOptions) if (InnerType == Metal) BeginError!Frame else anyerror!Frame {
+    pub fn begin(r: *Renderer, options: BeginOptions) !Frame { // TODO: add BeginError
         return .{ .inner = try .begin(&r.inner, options) };
     }
 
@@ -47,6 +47,10 @@ pub const Frame = struct {
 
     pub fn bindPipeline(frame: Frame, pipeline: GraphicsPipeline) void {
         frame.inner.bindPipeline(pipeline.inner);
+    }
+
+    pub fn bindUniforms(frame: Frame, comptime Uniforms: type, uniforms: Uniforms) void {
+        frame.inner.bindUniforms(Uniforms, uniforms);
     }
 
     pub fn drawMesh(frame: Frame, mesh: Mesh) void {

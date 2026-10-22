@@ -437,6 +437,11 @@ pub const Frame = struct {
         _ = pipeline;
     }
 
+    pub fn bindUniforms(frame: Frame, comptime Uniforms: type, uniforms: Uniforms) void {
+        _ = frame;
+        _ = uniforms;
+    }
+
     pub fn drawMesh(frame: Frame, mesh: Mesh) void {
         _ = frame;
         _ = mesh;

@@ -86,6 +86,11 @@ pub const Frame = struct {
         frame.encoder.setRenderPipelineState(pipeline.handle);
     }
 
+    pub fn bindUniforms(frame: Frame, comptime Uniforms: type, uniforms: Uniforms) void {
+        frame.encoder.setVertexBytes(&uniforms, @sizeOf(Uniforms), 0);
+        frame.encoder.setFragmentBytes(&uniforms, @sizeOf(Uniforms), 0);
+    }
+
     pub fn drawMesh(frame: Frame, mesh: Mesh) void {
         frame.encoder.setVertexBuffer(mesh.vertex_buffer, 0, 0);
 
@@ -141,8 +146,7 @@ pub const GraphicsPipeline = struct {
         return .{ .handle = try m.device.newRenderPipelineState(pipeline_descriptor) };
     }
 
-    pub fn deinit(pipeline: GraphicsPipeline, m: *Metal) void {
-        _ = m;
+    pub fn deinit(pipeline: GraphicsPipeline, _: *Metal) void {
         pipeline.handle.release();
     }
 };
